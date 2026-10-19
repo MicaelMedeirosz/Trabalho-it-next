@@ -2,11 +2,32 @@ import { prisma } from "../../config/prisma";
 import { logAudit } from "../audit/audit.service";
 
 export async function listPendingApprovals() {
+  // select explícito: evita carregar sizeBytes (BigInt), que o res.json()
+  // do Express não sabe serializar e derrubava o processo (unhandled
+  // rejection em handler async no Node 20+).
   return prisma.approvalQueue.findMany({
     where: { status: "PENDING" },
-    include: {
-      file: { include: { uploadedBy: { select: { name: true } } } },
-      session: { include: { validationResults: true } },
+    select: {
+      id: true,
+      fileId: true,
+      sessionId: true,
+      status: true,
+      createdAt: true,
+      file: {
+        select: {
+          id: true,
+          originalName: true,
+          identifiedDbms: true,
+          uploadedBy: { select: { name: true } },
+        },
+      },
+      session: {
+        select: {
+          id: true,
+          totalDurationMs: true,
+          validationResults: { select: { id: true, ruleCode: true, passed: true, details: true } },
+        },
+      },
     },
     orderBy: { createdAt: "asc" },
   });

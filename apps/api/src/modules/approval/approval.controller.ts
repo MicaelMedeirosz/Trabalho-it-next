@@ -1,18 +1,24 @@
 import { Router } from "express";
 import { requireAuth, requireRole, AuthenticatedRequest } from "../../middleware/auth.middleware";
+import { asyncHandler } from "../../middleware/asyncHandler";
 import { listPendingApprovals, decideApproval } from "./approval.service";
 
 export const approvalRouter = Router();
 
 approvalRouter.use(requireAuth);
 
-approvalRouter.get("/", async (_req, res) => {
-  const items = await listPendingApprovals();
-  res.json(items);
-});
+approvalRouter.get(
+  "/",
+  asyncHandler(async (_req, res) => {
+    const items = await listPendingApprovals();
+    res.json(items);
+  })
+);
 
-approvalRouter.post("/:id/decide", requireRole("ADMIN"), async (req: AuthenticatedRequest, res) => {
-  try {
+approvalRouter.post(
+  "/:id/decide",
+  requireRole("ADMIN"),
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
     const { decision, rejectionReason } = req.body;
     if (!["APPROVED", "REJECTED"].includes(decision)) {
       return res.status(400).json({ error: "decision deve ser APPROVED ou REJECTED" });
@@ -24,7 +30,5 @@ approvalRouter.post("/:id/decide", requireRole("ADMIN"), async (req: Authenticat
       rejectionReason,
     });
     res.json(result);
-  } catch (err: any) {
-    res.status(400).json({ error: err.message });
-  }
-});
+  })
+);
