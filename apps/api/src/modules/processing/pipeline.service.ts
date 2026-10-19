@@ -43,12 +43,16 @@ export async function processUpload(input: ProcessUploadInput): Promise<ProcessU
   const extension = resolveExtension(input.originalName);
 
   // ETP-001: Recebimento do arquivo (log não bloqueante — não precisa esperar
-  // a escrita terminar para seguir o pipeline).
+  // a escrita terminar para seguir o pipeline). O catch é anexado
+  // imediatamente: se a rejeição ocorresse antes do await lá embaixo, virava
+  // unhandled rejection e o Node 20+ derrubava o processo inteiro.
   const uploadReceivedLog = logAudit({
     event: "UPLOAD_RECEIVED",
     status: "SUCCESS",
     message: input.originalName,
     userId: input.uploadedById,
+  }).catch((err: any) => {
+    console.error("logAudit UPLOAD_RECEIVED falhou:", err.message);
   });
 
   // ETP-002: Validação de extensão
