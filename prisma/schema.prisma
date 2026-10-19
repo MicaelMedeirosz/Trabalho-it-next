@@ -1,0 +1,311 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ===================== USUÁRIOS =====================
+
+model User {
+  id           String   @id @default(uuid())
+  name         String
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  role         Role     @default(ANALYST)
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  files            File[]
+  approvalDecisions ApprovalQueue[]
+  auditLogs        AuditLog[]
+
+  @@map("users")
+}
+
+enum Role {
+  ADMIN
+  ANALYST
+  VIEWER
+}
+
+// ===================== ARQUIVOS =====================
+
+model File {
+  id             String      @id @default(uuid())
+  originalName   String      @map("original_name")
+  extension      FileExtension
+  sizeBytes      BigInt      @map("size_bytes")
+  storagePath    String      @map("storage_path")
+  sha256Hash     String      @unique @map("sha256_hash")
+  encoding       String?
+  uploadedById   String      @map("uploaded_by")
+  uploadedBy     User        @relation(fields: [uploadedById], references: [id])
+  uploadedAt     DateTime    @default(now()) @map("uploaded_at")
+  status         FileStatus  @default(RECEIVED)
+  isDuplicate    Boolean     @default(false) @map("is_duplicate")
+  duplicateOfId  String?     @map("duplicate_of")
+  identifiedDbms String?     @map("identified_dbms")
+
+  processingSessions ProcessingSession[]
+  approvalQueue       ApprovalQueue[]
+  auditLogs            AuditLog[]
+
+  @@map("files")
+}
+
+enum FileExtension {
+  CSV
+  TXT
+  SQL
+}
+
+enum FileStatus {
+  RECEIVED
+  PROCESSING
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  FAILED
+}
+
+// ===================== PROCESSAMENTO =====================
+
+model ProcessingSession {
+  id               String    @id @default(uuid())
+  fileId           String    @map("file_id")
+  file             File      @relation(fields: [fileId], references: [id])
+  startedAt        DateTime  @default(now()) @map("started_at")
+  finishedAt       DateTime? @map("finished_at")
+  totalDurationMs  Int?      @map("total_duration_ms")
+  finalStatus      String?   @map("final_status")
+
+  steps              ProcessingStep[]
+  validationResults   ValidationResult[]
+  approvalQueue        ApprovalQueue[]
+
+  schemas     CatalogSchema[]
+  tables      CatalogTable[]
+  views       CatalogView[]
+  procedures  CatalogProcedure[]
+  sequences   CatalogSequence[]
+
+  @@map("processing_sessions")
+}
+
+model ProcessingStep {
+  id          String            @id @default(uuid())
+  sessionId   String            @map("session_id")
+  session     ProcessingSession @relation(fields: [sessionId], references: [id])
+  stepCode    String            @map("step_code") // ETP-001 ... ETP-020
+  stepName    String            @map("step_name")
+  status      StepStatus        @default(PENDING)
+  message     String?
+  startedAt   DateTime?         @map("started_at")
+  finishedAt  DateTime?         @map("finished_at")
+  durationMs  Int?              @map("duration_ms")
+
+  @@map("processing_steps")
+}
+
+enum StepStatus {
+  PENDING
+  RUNNING
+  SUCCESS
+  FAILED
+  SKIPPED
+}
+
+// ===================== VALIDAÇÃO =====================
+
+model ValidationRule {
+  code        String   @id // RV001 ... RV016
+  description String
+  severity    RuleSeverity
+
+  results ValidationResult[]
+
+  @@map("validation_rules")
+}
+
+enum RuleSeverity {
+  BLOCKER
+  WARNING
+  INFO
+}
+
+model ValidationResult {
+  id        String            @id @default(uuid())
+  sessionId String            @map("session_id")
+  session   ProcessingSession @relation(fields: [sessionId], references: [id])
+  ruleCode  String            @map("rule_code")
+  rule      ValidationRule    @relation(fields: [ruleCode], references: [code])
+  passed    Boolean
+  details   String?
+  createdAt DateTime          @default(now()) @map("created_at")
+
+  @@map("validation_results")
+}
+
+// ===================== HOMOLOGAÇÃO =====================
+
+model ApprovalQueue {
+  id               String            @id @default(uuid())
+  fileId           String            @map("file_id")
+  file             File              @relation(fields: [fileId], references: [id])
+  sessionId        String            @map("session_id")
+  session          ProcessingSession @relation(fields: [sessionId], references: [id])
+  status           ApprovalStatus    @default(PENDING)
+  decidedById      String?           @map("decided_by")
+  decidedBy        User?             @relation(fields: [decidedById], references: [id])
+  decidedAt        DateTime?         @map("decided_at")
+  rejectionReason  String?           @map("rejection_reason")
+  createdAt        DateTime          @default(now()) @map("created_at")
+
+  @@map("approval_queue")
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+// ===================== AUDITORIA =====================
+
+model AuditLog {
+  id               String   @id @default(uuid())
+  fileId           String?  @map("file_id")
+  file             File?    @relation(fields: [fileId], references: [id])
+  userId           String?  @map("user_id")
+  user             User?    @relation(fields: [userId], references: [id])
+  event            String
+  status           String
+  message          String?
+  executionTimeMs  Int?     @map("execution_time_ms")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  @@map("audit_log")
+}
+
+// ===================== CATALOGAÇÃO DE OBJETOS =====================
+
+model CatalogSchema {
+  id          String            @id @default(uuid())
+  sessionId   String            @map("session_id")
+  session     ProcessingSession @relation(fields: [sessionId], references: [id])
+  name        String
+  description String?
+
+  tables     CatalogTable[]
+  views      CatalogView[]
+  procedures CatalogProcedure[]
+  sequences  CatalogSequence[]
+
+  @@map("catalog_schemas")
+}
+
+model CatalogTable {
+  id                String            @id @default(uuid())
+  schemaId          String?           @map("schema_id")
+  schema            CatalogSchema?    @relation(fields: [schemaId], references: [id])
+  sessionId         String            @map("session_id")
+  session           ProcessingSession @relation(fields: [sessionId], references: [id])
+  name              String
+  description       String?
+  rowCountEstimate  BigInt?           @map("row_count_estimate")
+
+  columns             CatalogColumn[]
+  constraints          CatalogConstraint[]
+  relationshipsSource   CatalogRelationship[] @relation("SourceTable")
+  relationshipsTarget   CatalogRelationship[] @relation("TargetTable")
+
+  @@map("catalog_tables")
+}
+
+model CatalogColumn {
+  id               String       @id @default(uuid())
+  tableId          String       @map("table_id")
+  table            CatalogTable @relation(fields: [tableId], references: [id])
+  name             String
+  dataType         String?      @map("data_type")
+  nullable         Boolean?
+  isPrimaryKey     Boolean      @default(false) @map("is_primary_key")
+  description      String?
+  ordinalPosition  Int?         @map("ordinal_position")
+
+  @@map("catalog_columns")
+}
+
+model CatalogView {
+  id         String            @id @default(uuid())
+  schemaId   String?           @map("schema_id")
+  schema     CatalogSchema?    @relation(fields: [schemaId], references: [id])
+  sessionId  String            @map("session_id")
+  session    ProcessingSession @relation(fields: [sessionId], references: [id])
+  name       String
+  definition String?
+
+  @@map("catalog_views")
+}
+
+model CatalogProcedure {
+  id         String            @id @default(uuid())
+  schemaId   String?           @map("schema_id")
+  schema     CatalogSchema?    @relation(fields: [schemaId], references: [id])
+  sessionId  String            @map("session_id")
+  session    ProcessingSession @relation(fields: [sessionId], references: [id])
+  name       String
+  parameters Json?
+  body       String?
+
+  @@map("catalog_procedures")
+}
+
+model CatalogSequence {
+  id           String            @id @default(uuid())
+  schemaId     String?           @map("schema_id")
+  schema       CatalogSchema?    @relation(fields: [schemaId], references: [id])
+  sessionId    String            @map("session_id")
+  session      ProcessingSession @relation(fields: [sessionId], references: [id])
+  name         String
+  startValue   BigInt?           @map("start_value")
+  incrementBy  BigInt?           @map("increment_by")
+
+  @@map("catalog_sequences")
+}
+
+model CatalogConstraint {
+  id         String       @id @default(uuid())
+  tableId    String       @map("table_id")
+  table      CatalogTable @relation(fields: [tableId], references: [id])
+  name       String
+  type       ConstraintType
+  definition String?
+
+  relationships CatalogRelationship[]
+
+  @@map("catalog_constraints")
+}
+
+enum ConstraintType {
+  PK
+  FK
+  UNIQUE
+  CHECK
+  NOT_NULL
+}
+
+model CatalogRelationship {
+  id                 String             @id @default(uuid())
+  sourceTableId      String             @map("source_table_id")
+  sourceTable        CatalogTable       @relation("SourceTable", fields: [sourceTableId], references: [id])
+  targetTableId      String             @map("target_table_id")
+  targetTable        CatalogTable       @relation("TargetTable", fields: [targetTableId], references: [id])
+  constraintId       String?            @map("constraint_id")
+  constraint         CatalogConstraint? @relation(fields: [constraintId], references: [id])
+  relationshipType   String?            @map("relationship_type")
+
+  @@map("catalog_relationships")
+}
