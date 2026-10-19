@@ -100,7 +100,7 @@ export async function skipStep(sessionId: string, code: StepCode, message: strin
   });
 }
 
-export async function finishSession(session: SessionHandle, finalStatus: string) {
+export async function finishSession(session: SessionHandle, finalStatus: string, objectCount?: number) {
   const finishedAt = new Date();
   await prisma.processingSession.update({
     where: { id: session.id },
@@ -108,6 +108,7 @@ export async function finishSession(session: SessionHandle, finalStatus: string)
       finishedAt,
       finalStatus,
       totalDurationMs: finishedAt.getTime() - session.startedAt.getTime(),
+      ...(objectCount !== undefined ? { objectCount } : {}),
     },
   });
 }

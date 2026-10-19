@@ -26,6 +26,7 @@ export async function listAuditLogs(filters: { fileId?: string }) {
   return prisma.auditLog.findMany({
     where: filters.fileId ? { fileId: filters.fileId } : undefined,
     orderBy: { createdAt: "desc" },
+    take: 200,
     include: {
       user: { select: { name: true, email: true } },
       file: { select: { originalName: true } },

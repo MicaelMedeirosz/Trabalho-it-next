@@ -81,6 +81,7 @@ model ProcessingSession {
   finishedAt       DateTime? @map("finished_at")
   totalDurationMs  Int?      @map("total_duration_ms")
   finalStatus      String?   @map("final_status")
+  objectCount      Int?      @map("object_count")
 
   steps              ProcessingStep[]
   validationResults   ValidationResult[]

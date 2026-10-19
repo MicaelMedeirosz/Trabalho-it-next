@@ -23,14 +23,22 @@ dashboardRouter.get(
 dashboardRouter.get(
   "/summary",
   asyncHandler(async (_req, res) => {
-    const [total, processing, pending, approved, rejected, failed] = await Promise.all([
-      prisma.file.count(),
-      prisma.file.count({ where: { status: "PROCESSING" } }),
-      prisma.file.count({ where: { status: "PENDING_APPROVAL" } }),
-      prisma.file.count({ where: { status: "APPROVED" } }),
-      prisma.file.count({ where: { status: "REJECTED" } }),
-      prisma.file.count({ where: { status: "FAILED" } }),
-    ]);
-    res.json({ total, processing, pending, approved, rejected, failed });
+    // 1 groupBy no lugar de 6 counts — 1 round-trip só
+    const grouped = await prisma.file.groupBy({
+      by: ["status"],
+      _count: { _all: true },
+    });
+    const counts: Record<string, number> = {};
+    for (const g of grouped) {
+      counts[g.status] = g._count._all;
+    }
+    res.json({
+      total: Object.values(counts).reduce((a, b) => a + b, 0),
+      processing: counts["PROCESSING"] ?? 0,
+      pending: counts["PENDING_APPROVAL"] ?? 0,
+      approved: counts["APPROVED"] ?? 0,
+      rejected: counts["REJECTED"] ?? 0,
+      failed: counts["FAILED"] ?? 0,
+    });
   })
 );

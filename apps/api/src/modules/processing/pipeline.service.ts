@@ -170,20 +170,22 @@ export async function processUpload(input: ProcessUploadInput): Promise<ProcessU
           identifiedDbms: dbms === "Não identificado" ? null : dbms,
         },
       }),
-      finishSession(session, "PENDING_APPROVAL"),
+    ]);
+
+    await Promise.all([
+      finishSession(session, "PENDING_APPROVAL", objectCount),
+      logAudit({
+        event: "FILE_PROCESSED",
+        status: "SUCCESS",
+        message: `Arquivo ${input.originalName} processado. ${objectCount} objeto(s) identificado(s). Bloqueios: ${hasBlockerFailure}`,
+        userId: input.uploadedById,
+        fileId: file.id,
+      }),
     ]);
 
     // ETP-017 a ETP-020 ocorrem no momento da decisão humana (ver approval.service.ts)
     // Aqui são pré-registradas como PENDING (já criadas em createSession) e serão
     // concluídas/skipadas quando o administrador decidir.
-
-    await logAudit({
-      event: "FILE_PROCESSED",
-      status: "SUCCESS",
-      message: `Arquivo ${input.originalName} processado. ${objectCount} objeto(s) identificado(s). Bloqueios: ${hasBlockerFailure}`,
-      userId: input.uploadedById,
-      fileId: file.id,
-    });
 
     return {
       fileId: file.id,

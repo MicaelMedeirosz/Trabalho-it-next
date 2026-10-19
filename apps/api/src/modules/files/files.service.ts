@@ -57,44 +57,35 @@ export async function createFileRecord(params: {
 }
 
 export async function listFiles() {
+  // Query enxuta: objectCount vem de coluna persistida no processamento
+  // (não recalculada via includes aninhados, que geravam múltiplos
+  // round-trips ao banco remoto) e a validação usa _count filtrado —
+  // basta saber se existe alguma regra reprovada, não carregar todas.
   const files = await prisma.file.findMany({
     orderBy: { uploadedAt: "desc" },
-    include: {
-      uploadedBy: { select: { name: true, email: true } },
+    select: {
+      id: true,
+      originalName: true,
+      extension: true,
+      uploadedAt: true,
+      status: true,
+      identifiedDbms: true,
+      isDuplicate: true,
+      sizeBytes: true,
+      uploadedBy: { select: { name: true } },
       processingSessions: {
         orderBy: { startedAt: "desc" },
         take: 1,
-        include: {
-          validationResults: true,
-          _count: {
-            select: {
-              schemas: true,
-              tables: true,
-              views: true,
-              procedures: true,
-              sequences: true,
-            },
-          },
-          tables: { select: { _count: { select: { columns: true, constraints: true } } } },
+        select: {
+          totalDurationMs: true,
+          objectCount: true,
+          _count: { select: { validationResults: { where: { passed: false } } } },
         },
       },
     },
   });
   return files.map((f) => {
     const session = f.processingSessions[0];
-    const columnCount =
-      session?.tables.reduce((acc, t) => acc + t._count.columns, 0) ?? 0;
-    const constraintCount =
-      session?.tables.reduce((acc, t) => acc + t._count.constraints, 0) ?? 0;
-    const objectCount = session
-      ? session._count.schemas +
-        session._count.tables +
-        session._count.views +
-        session._count.procedures +
-        session._count.sequences +
-        columnCount +
-        constraintCount
-      : 0;
     return {
       id: f.id,
       originalName: f.originalName,
@@ -106,8 +97,8 @@ export async function listFiles() {
       identifiedDbms: f.identifiedDbms,
       isDuplicate: f.isDuplicate,
       processingDurationMs: session?.totalDurationMs ?? null,
-      validationPassed: session?.validationResults.every((v) => v.passed) ?? null,
-      objectCount,
+      validationPassed: session ? session._count.validationResults === 0 : null,
+      objectCount: session?.objectCount ?? 0,
     };
   });
 }
