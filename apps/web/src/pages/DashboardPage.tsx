@@ -43,15 +43,36 @@ export function DashboardPage() {
 
   useEffect(() => {
     load();
-    const interval = setInterval(load, 5000);
-    return () => clearInterval(interval);
+    // Pausa o polling quando a aba está oculta (document.visibilityState)
+    // e retoma ao voltar — evita requests inúteis em background.
+    const interval = setInterval(() => {
+      if (document.visibilityState === "visible") {
+        load();
+      }
+    }, 10000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") load();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, []);
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-semibold text-slate-900">Dashboard de Arquivos</h2>
-        <span className="text-xs text-slate-400">Atualização automática a cada 5s</span>
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-slate-400">Atualização automática a cada 10s</span>
+          <button
+            onClick={() => load()}
+            className="text-xs bg-slate-900 text-white px-3 py-1 rounded hover:bg-slate-800"
+          >
+            Atualizar
+          </button>
+        </div>
       </div>
 
       {loading ? (
