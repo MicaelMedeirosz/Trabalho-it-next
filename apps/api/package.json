@@ -9,6 +9,7 @@
     "start": "node dist/server.js"
   },
   "dependencies": {
+    "@trabalho/shared-types": "*",
     "@prisma/client": "^5.20.0",
     "@supabase/supabase-js": "^2.45.4",
     "bcryptjs": "^2.4.3",
