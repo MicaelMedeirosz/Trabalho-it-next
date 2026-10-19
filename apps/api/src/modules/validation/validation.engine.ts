@@ -182,11 +182,19 @@ export async function persistValidationResults(sessionId: string, results: RuleC
 
 export async function seedValidationRules() {
   const { VALIDATION_RULES } = await import("@trabalho/shared-types");
-  for (const rule of VALIDATION_RULES) {
-    await prisma.validationRule.upsert({
-      where: { code: rule.code },
-      update: { description: rule.description, severity: rule.severity as any },
-      create: { code: rule.code, description: rule.description, severity: rule.severity as any },
-    });
+
+  const existingCount = await prisma.validationRule.count();
+  if (existingCount === VALIDATION_RULES.length) {
+    return; // já seedado, evita round-trips desnecessários no boot/reload
   }
+
+  await Promise.all(
+    VALIDATION_RULES.map((rule) =>
+      prisma.validationRule.upsert({
+        where: { code: rule.code },
+        update: { description: rule.description, severity: rule.severity as any },
+        create: { code: rule.code, description: rule.description, severity: rule.severity as any },
+      })
+    )
+  );
 }
