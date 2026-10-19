@@ -61,13 +61,37 @@ export async function listFiles() {
       processingSessions: {
         orderBy: { startedAt: "desc" },
         take: 1,
-        include: { validationResults: true },
+        include: {
+          validationResults: true,
+          _count: {
+            select: {
+              schemas: true,
+              tables: true,
+              views: true,
+              procedures: true,
+              sequences: true,
+            },
+          },
+          tables: { select: { _count: { select: { columns: true, constraints: true } } } },
+        },
       },
     },
   });
   return files.map((f) => {
     const session = f.processingSessions[0];
-    const objectCount = 0;
+    const columnCount =
+      session?.tables.reduce((acc, t) => acc + t._count.columns, 0) ?? 0;
+    const constraintCount =
+      session?.tables.reduce((acc, t) => acc + t._count.constraints, 0) ?? 0;
+    const objectCount = session
+      ? session._count.schemas +
+        session._count.tables +
+        session._count.views +
+        session._count.procedures +
+        session._count.sequences +
+        columnCount +
+        constraintCount
+      : 0;
     return {
       id: f.id,
       originalName: f.originalName,
