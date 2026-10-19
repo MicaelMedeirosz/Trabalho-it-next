@@ -6,10 +6,18 @@ interface UploadItem {
   id: string;
   file: File;
   progress: number;
-  status: "QUEUED" | "UPLOADING" | "DONE" | "ERROR";
+  status: "QUEUED" | "UPLOADING" | "PROCESSING" | "DONE" | "ERROR";
   resultMessage?: string;
   controller: AbortController;
 }
+
+const STATUS_LABEL: Record<UploadItem["status"], string> = {
+  QUEUED: "Na fila",
+  UPLOADING: "Enviando...",
+  PROCESSING: "Processando no servidor (validação, catalogação)...",
+  DONE: "Concluído",
+  ERROR: "Falha",
+};
 
 const ACCEPTED = {
   "text/csv": [".csv"],
@@ -53,7 +61,13 @@ export function UploadPage() {
         signal: item.controller.signal,
         onUploadProgress: (evt) => {
           const progress = evt.total ? Math.round((evt.loaded / evt.total) * 100) : 0;
-          updateItem(item.id, { progress });
+          // Ao atingir 100% do envio, o arquivo já chegou ao servidor mas o
+          // pipeline (validação/catalogação) ainda está rodando — sinaliza
+          // "processando" em vez de deixar a barra parada em 100% sem feedback.
+          updateItem(item.id, {
+            progress,
+            status: progress >= 100 ? "PROCESSING" : "UPLOADING",
+          });
         },
       });
       const hasError = data.errors?.length > 0;
@@ -113,15 +127,19 @@ export function UploadPage() {
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-slate-900 truncate">{item.file.name}</p>
                 <p className="text-xs text-slate-500">
-                  {(item.file.size / 1024).toFixed(1)} KB
+                  {(item.file.size / 1024).toFixed(1)} KB · {STATUS_LABEL[item.status]}
                 </p>
-                <div className="w-full bg-slate-200 rounded-full h-2 mt-2">
-                  <div
-                    className={`h-2 rounded-full transition-all ${
-                      item.status === "ERROR" ? "bg-red-500" : "bg-slate-900"
-                    }`}
-                    style={{ width: `${item.progress}%` }}
-                  />
+                <div className="w-full bg-slate-200 rounded-full h-2 mt-2 overflow-hidden">
+                  {item.status === "PROCESSING" ? (
+                    <div className="h-2 rounded-full bg-amber-500 animate-pulse w-full" />
+                  ) : (
+                    <div
+                      className={`h-2 rounded-full transition-all ${
+                        item.status === "ERROR" ? "bg-red-500" : "bg-slate-900"
+                      }`}
+                      style={{ width: `${item.progress}%` }}
+                    />
+                  )}
                 </div>
                 {item.resultMessage && (
                   <p

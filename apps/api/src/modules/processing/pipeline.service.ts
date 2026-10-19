@@ -1,6 +1,7 @@
 import { prisma } from "../../config/prisma";
 import { env } from "../../config/env";
-import { createSession, runStep, finishSession } from "./steps.service";
+import { createSession, runStep, flushSteps, createStepRecorder, finishSession, StepRecord } from "./steps.service";
+import { StepCode } from "@trabalho/shared-types";
 import { computeSha256, findDuplicateByHash, uploadToStorage, createFileRecord } from "../files/files.service";
 import { parseCsv } from "../catalog/csv.parser";
 import { parseTxt } from "../catalog/txt.parser";
@@ -41,8 +42,14 @@ function detectEncoding(buffer: Buffer): string {
 export async function processUpload(input: ProcessUploadInput): Promise<ProcessUploadResult> {
   const extension = resolveExtension(input.originalName);
 
-  // ETP-001: Recebimento do arquivo
-  await logAudit({ event: "UPLOAD_RECEIVED", status: "SUCCESS", message: input.originalName, userId: input.uploadedById });
+  // ETP-001: Recebimento do arquivo (log não bloqueante — não precisa esperar
+  // a escrita terminar para seguir o pipeline).
+  const uploadReceivedLog = logAudit({
+    event: "UPLOAD_RECEIVED",
+    status: "SUCCESS",
+    message: input.originalName,
+    userId: input.uploadedById,
+  });
 
   // ETP-002: Validação de extensão
   if (!extension) {
@@ -69,9 +76,10 @@ export async function processUpload(input: ProcessUploadInput): Promise<ProcessU
 
   // Grava registro do arquivo (metadados iniciais - ETP-007 parcial)
   const storagePath = `${Date.now()}-${input.originalName}`;
-  if (!duplicate) {
-    await uploadToStorage(input.buffer, storagePath, input.mimeType);
-  }
+
+  // Upload ao Storage e criação da sessão não dependem um do outro — rodam
+  // em paralelo com a criação do registro do arquivo quando possível.
+  const uploadPromise = duplicate ? Promise.resolve() : uploadToStorage(input.buffer, storagePath, input.mimeType);
 
   const file = await createFileRecord({
     originalName: input.originalName,
@@ -82,25 +90,27 @@ export async function processUpload(input: ProcessUploadInput): Promise<ProcessU
     uploadedById: input.uploadedById,
     isDuplicate: !!duplicate,
     duplicateOfId: duplicate?.id,
+    encoding,
+    status: "PROCESSING",
   });
 
-  await prisma.file.update({ where: { id: file.id }, data: { encoding, status: "PROCESSING" } });
+  // ETP-008: Criação da sessão de processamento (em paralelo com o término do upload ao Storage)
+  const [session] = await Promise.all([createSession(file.id), uploadPromise, uploadReceivedLog]);
 
-  // ETP-008: Criação da sessão de processamento
-  const session = await createSession(file.id);
+  const stepRecords = createStepRecorder();
 
   try {
     // ETP-007: Registro de metadados iniciais (já persistido acima, log formal aqui)
-    await runStep(session.id, "ETP-007", () => `Metadados iniciais registrados para ${input.originalName}`);
+    runStepSync(stepRecords, "ETP-007", `Metadados iniciais registrados para ${input.originalName}`);
 
-    await runStep(session.id, "ETP-008", () => `Sessão ${session.id} criada`);
+    runStepSync(stepRecords, "ETP-008", `Sessão ${session.id} criada`);
 
     // ETP-009: Análise estrutural do conteúdo
     const content = input.buffer.toString("utf-8");
     let parsed: ParseResult;
     let isStructureValid = true;
 
-    await runStep(session.id, "ETP-009", () => {
+    await runStep(stepRecords, "ETP-009", () => {
       if (content.trim().length === 0) {
         isStructureValid = false;
         throw new Error("Conteúdo vazio, estrutura inválida.");
@@ -109,7 +119,7 @@ export async function processUpload(input: ProcessUploadInput): Promise<ProcessU
     });
 
     // ETP-010: Identificação automática de objetos
-    parsed = await runStep(session.id, "ETP-010", () => {
+    parsed = await runStep(stepRecords, "ETP-010", () => {
       switch (extension) {
         case "CSV":
           return parseCsv(content);
@@ -121,48 +131,51 @@ export async function processUpload(input: ProcessUploadInput): Promise<ProcessU
     });
 
     // ETP-011: Quantificação estatística
-    const objectStats = await runStep(session.id, "ETP-011", () => {
+    await runStep(stepRecords, "ETP-011", () => {
       const totalColumns = parsed.tables.reduce((a, t) => a + t.columns.length, 0);
       const totalConstraints = parsed.tables.reduce((a, t) => a + t.constraints.length, 0);
       return `Schemas:${parsed.schemas.length} Tabelas:${parsed.tables.length} Colunas:${totalColumns} Views:${parsed.views.length} Procedures:${parsed.procedures.length} Sequences:${parsed.sequences.length} Constraints:${totalConstraints} Relacionamentos:${parsed.relationships.length}`;
     });
 
     // ETP-012: Classificação do SGBD de origem
-    const dbms = await runStep(session.id, "ETP-012", () => parsed.dbmsGuess ?? "Não identificado");
-    await prisma.file.update({ where: { id: file.id }, data: { identifiedDbms: dbms === "Não identificado" ? null : dbms } });
+    const dbms = await runStep(stepRecords, "ETP-012", () => parsed.dbmsGuess ?? "Não identificado");
 
-    // Persiste catálogo extraído
-    const { objectCount } = await persistCatalog(session.id, parsed);
-
-    // ETP-013: Persistência de logs detalhados (steps já persistidos continuamente)
-    await runStep(session.id, "ETP-013", () => "Logs detalhados persistidos.");
-
-    // ETP-014: Atualização do dashboard em tempo real (via polling - status refletido no banco)
-    await runStep(session.id, "ETP-014", () => "Status disponível para o dashboard via polling.");
-
-    // ETP-015: Aplicação das regras de aprovação RV001-RV016
-    const validationResults = await runStep(session.id, "ETP-015", () => {
+    // ETP-015: Aplicação das regras de aprovação RV001-RV016 (não depende da
+    // persistência do catálogo, só do resultado do parse — roda em paralelo
+    // com a gravação do catálogo no banco).
+    const validationResults = await runStep(stepRecords, "ETP-015", () => {
       return runValidationRules({ isReadable, isStructureValid, parsed });
     });
-    await persistValidationResults(session.id, validationResults);
+
+    runStepSync(stepRecords, "ETP-013", "Logs detalhados persistidos.");
+    runStepSync(stepRecords, "ETP-014", "Status disponível para o dashboard via polling.");
+    runStepSync(stepRecords, "ETP-016", "Arquivo direcionado para fila de homologação.");
 
     const hasBlockerFailure = validationResults.some(
       (r) => !r.passed && ["RV001", "RV002", "RV004", "RV005", "RV011", "RV016"].includes(r.code)
     );
 
-    // ETP-016: Direcionamento para fila de homologação
-    await runStep(session.id, "ETP-016", () => "Arquivo direcionado para fila de homologação.");
-    await prisma.approvalQueue.create({
-      data: { fileId: file.id, sessionId: session.id, status: "PENDING" },
-    });
-
-    await prisma.file.update({ where: { id: file.id }, data: { status: "PENDING_APPROVAL" } });
+    // A partir daqui, todas as gravações restantes são independentes entre si
+    // e rodam em paralelo: persistir catálogo, validações, flush das etapas,
+    // criar fila de homologação, atualizar status final do arquivo.
+    const [{ objectCount }] = await Promise.all([
+      persistCatalog(session.id, parsed),
+      persistValidationResults(session.id, validationResults),
+      flushSteps(session.id, stepRecords),
+      prisma.approvalQueue.create({ data: { fileId: file.id, sessionId: session.id, status: "PENDING" } }),
+      prisma.file.update({
+        where: { id: file.id },
+        data: {
+          status: "PENDING_APPROVAL",
+          identifiedDbms: dbms === "Não identificado" ? null : dbms,
+        },
+      }),
+      finishSession(session, "PENDING_APPROVAL"),
+    ]);
 
     // ETP-017 a ETP-020 ocorrem no momento da decisão humana (ver approval.service.ts)
     // Aqui são pré-registradas como PENDING (já criadas em createSession) e serão
     // concluídas/skipadas quando o administrador decidir.
-
-    await finishSession(session.id, "PENDING_APPROVAL");
 
     await logAudit({
       event: "FILE_PROCESSED",
@@ -180,17 +193,25 @@ export async function processUpload(input: ProcessUploadInput): Promise<ProcessU
       validation: validationResults,
     };
   } catch (err: any) {
-    await finishSession(session.id, "FAILED");
-    await prisma.file.update({ where: { id: file.id }, data: { status: "FAILED" } });
-    await logAudit({
-      event: "FILE_PROCESSING_FAILED",
-      status: "FAILED",
-      message: err.message,
-      userId: input.uploadedById,
-      fileId: file.id,
-    });
+    await Promise.all([
+      flushSteps(session.id, stepRecords),
+      finishSession(session, "FAILED"),
+      prisma.file.update({ where: { id: file.id }, data: { status: "FAILED" } }),
+      logAudit({
+        event: "FILE_PROCESSING_FAILED",
+        status: "FAILED",
+        message: err.message,
+        userId: input.uploadedById,
+        fileId: file.id,
+      }),
+    ]);
     throw err;
   }
+}
+
+function runStepSync(records: StepRecord[], code: StepCode, message: string) {
+  const now = new Date();
+  records.push({ stepCode: code, status: "SUCCESS", startedAt: now, finishedAt: now, durationMs: 0, message });
 }
 
 export class UploadError extends Error {}

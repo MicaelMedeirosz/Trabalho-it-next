@@ -1,11 +1,26 @@
 import { prisma } from "../../config/prisma";
 import { PROCESSING_STEPS, StepCode } from "@trabalho/shared-types";
 
-export async function createSession(fileId: string) {
+export interface SessionHandle {
+  id: string;
+  startedAt: Date;
+}
+
+export interface StepRecord {
+  stepCode: StepCode;
+  status: "SUCCESS" | "FAILED" | "SKIPPED";
+  message?: string;
+  startedAt: Date;
+  finishedAt: Date;
+  durationMs: number;
+}
+
+export async function createSession(fileId: string): Promise<SessionHandle> {
   const session = await prisma.processingSession.create({
     data: { fileId },
   });
   // Pré-cria todas as 20 etapas como PENDING para rastreabilidade total
+  // (apenas 1 round-trip via createMany, não é um loop).
   await prisma.processingStep.createMany({
     data: PROCESSING_STEPS.map((s) => ({
       sessionId: session.id,
@@ -14,45 +29,68 @@ export async function createSession(fileId: string) {
       status: "PENDING" as const,
     })),
   });
-  return session;
+  return { id: session.id, startedAt: session.startedAt };
 }
 
+/**
+ * Executa uma etapa do pipeline e registra o resultado em memória (sem
+ * round-trip ao banco). O custo de rede do Supabase pooler é o gargalo real
+ * do pipeline síncrono — gravar a cada etapa individualmente multiplicava
+ * a latência por etapa. Os registros coletados aqui são persistidos de uma
+ * vez, em paralelo, por `flushSteps`.
+ */
 export async function runStep<T>(
-  sessionId: string,
+  records: StepRecord[],
   code: StepCode,
   fn: () => Promise<T> | T
 ): Promise<T> {
   const startedAt = new Date();
-  await prisma.processingStep.updateMany({
-    where: { sessionId, stepCode: code },
-    data: { status: "RUNNING", startedAt },
-  });
   try {
     const result = await fn();
     const finishedAt = new Date();
-    await prisma.processingStep.updateMany({
-      where: { sessionId, stepCode: code },
-      data: {
-        status: "SUCCESS",
-        finishedAt,
-        durationMs: finishedAt.getTime() - startedAt.getTime(),
-        message: typeof result === "string" ? result : undefined,
-      },
+    records.push({
+      stepCode: code,
+      status: "SUCCESS",
+      startedAt,
+      finishedAt,
+      durationMs: finishedAt.getTime() - startedAt.getTime(),
+      message: typeof result === "string" ? result : undefined,
     });
     return result;
   } catch (err: any) {
     const finishedAt = new Date();
-    await prisma.processingStep.updateMany({
-      where: { sessionId, stepCode: code },
-      data: {
-        status: "FAILED",
-        finishedAt,
-        durationMs: finishedAt.getTime() - startedAt.getTime(),
-        message: err.message,
-      },
+    records.push({
+      stepCode: code,
+      status: "FAILED",
+      startedAt,
+      finishedAt,
+      durationMs: finishedAt.getTime() - startedAt.getTime(),
+      message: err.message,
     });
     throw err;
   }
+}
+
+export function createStepRecorder(): StepRecord[] {
+  return [];
+}
+
+/** Persiste todos os resultados de etapas coletados em memória, em paralelo. */
+export async function flushSteps(sessionId: string, records: StepRecord[]) {
+  await Promise.all(
+    records.map((r) =>
+      prisma.processingStep.updateMany({
+        where: { sessionId, stepCode: r.stepCode },
+        data: {
+          status: r.status,
+          startedAt: r.startedAt,
+          finishedAt: r.finishedAt,
+          durationMs: r.durationMs,
+          message: r.message,
+        },
+      })
+    )
+  );
 }
 
 export async function skipStep(sessionId: string, code: StepCode, message: string) {
@@ -62,11 +100,10 @@ export async function skipStep(sessionId: string, code: StepCode, message: strin
   });
 }
 
-export async function finishSession(sessionId: string, finalStatus: string) {
-  const session = await prisma.processingSession.findUniqueOrThrow({ where: { id: sessionId } });
+export async function finishSession(session: SessionHandle, finalStatus: string) {
   const finishedAt = new Date();
   await prisma.processingSession.update({
-    where: { id: sessionId },
+    where: { id: session.id },
     data: {
       finishedAt,
       finalStatus,

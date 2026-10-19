@@ -37,6 +37,8 @@ export async function createFileRecord(params: {
   uploadedById: string;
   isDuplicate: boolean;
   duplicateOfId?: string;
+  encoding: string;
+  status?: "RECEIVED" | "PROCESSING";
 }) {
   return prisma.file.create({
     data: {
@@ -48,7 +50,8 @@ export async function createFileRecord(params: {
       uploadedById: params.uploadedById,
       isDuplicate: params.isDuplicate,
       duplicateOfId: params.duplicateOfId,
-      status: "RECEIVED",
+      encoding: params.encoding,
+      status: params.status ?? "RECEIVED",
     },
   });
 }
