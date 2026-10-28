@@ -6,8 +6,8 @@ Plataforma para gestão do ciclo de vida de arquivos contendo estruturas de banc
 
 - **Backend:** Node.js + Express + TypeScript + Prisma
 - **Frontend:** React + Vite + TypeScript + TailwindCSS
-- **Banco de dados:** PostgreSQL (Supabase)
-- **Storage de arquivos:** Supabase Storage
+- **Banco de dados:** PostgreSQL (container Docker local)
+- **Storage de arquivos:** disco local (volume Docker)
 - **Autenticação:** JWT
 
 ## Estrutura
@@ -22,54 +22,41 @@ Plataforma para gestão do ciclo de vida de arquivos contendo estruturas de banc
   schema.prisma -> modelo de dados completo
 ```
 
-## Setup local
+## Setup local (Docker)
 
-### 1. Pré-requisitos
-- Node.js 20+
-- Conta gratuita no [Supabase](https://supabase.com)
-
-### 2. Criar projeto no Supabase
-1. Criar novo projeto em supabase.com
-2. Em **Project Settings > Database**, copiar a **Connection String** (modo "URI")
-3. Em **Project Settings > API**, copiar `URL` e `service_role key`
-4. Em **Storage**, criar um bucket chamado `uploads` (público ou privado, tanto faz — acesso é feito via service key)
-
-### 3. Variáveis de ambiente
-
-```
-cp apps/api/.env.example apps/api/.env
-cp apps/web/.env.example apps/web/.env
-```
-
-Preencher `apps/api/.env` com os dados do Supabase:
-```
-DATABASE_URL="postgresql://postgres:[SENHA]@[HOST]:5432/postgres"
-SUPABASE_URL="https://[PROJECT_REF].supabase.co"
-SUPABASE_SERVICE_ROLE_KEY="..."
-```
-
-### 4. Instalar dependências e preparar banco
+MVP 100% local. Só precisa de [Docker](https://www.docker.com/products/docker-desktop/) e Docker Compose instalados — nada de conta em serviço externo.
 
 ```bash
+docker compose up --build
+```
+
+Isso sobe 3 containers:
+- `db` — PostgreSQL 16, dados persistidos em volume (`db_data`)
+- `api` — backend Express, roda `prisma migrate deploy` automaticamente no start, arquivos de upload gravados em volume (`uploads_data`)
+- `web` — frontend React servido via nginx
+
+Acessar `http://localhost:5173`, criar conta (primeiro usuário pode ser promovido a `ADMIN` manualmente no banco para acessar a tela de Homologação).
+
+Pra derrubar os containers: `docker compose down` (dados continuam no volume). Pra limpar tudo, incluindo dados: `docker compose down -v`.
+
+### Rodar em outra máquina
+
+Clonar o repositório e rodar `docker compose up --build`. Não precisa instalar Node, Postgres nem nada além do Docker — tudo sobe dentro dos containers.
+
+### Desenvolvimento sem rebuild a cada mudança
+
+Pra editar código com hot-reload, ao invés de usar o container `api`/`web`, pode subir só o banco via Docker e rodar o resto local:
+
+```bash
+docker compose up db
 npm install
 npm run prisma:generate
-npm run prisma:migrate -- --name init
-```
-
-### 5. Rodar em desenvolvimento
-
-```bash
+npm run prisma:deploy
 npm run dev:api    # porta 4000
 npm run dev:web    # porta 5173
 ```
 
-Acessar `http://localhost:5173`, criar conta (primeiro usuário pode ser promovido a `ADMIN` manualmente no banco para acessar a tela de Homologação).
-
-## Deploy (free tier)
-
-- **Frontend:** Vercel (aponta para `apps/web`, variável `VITE_API_URL` = URL do backend no Render)
-- **Backend:** Render (Web Service apontando para `apps/api`, build `npm install && npm run build`, start `npm start`, variáveis de ambiente iguais ao `.env`)
-- **Banco/Storage:** Supabase (já usado em dev)
+Nesse caso, usar `DATABASE_URL="postgresql://postgres:postgres@localhost:5432/trabalho_it_next"` no `.env` (fora do Docker, o host é `localhost`, não `db`).
 
 ## Pipeline de Processamento (ETP-001 a ETP-020)
 

@@ -1,0 +1,55 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: trabalho_it_next
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PORT: 4000
+      DATABASE_URL: "postgresql://postgres:postgres@db:5432/trabalho_it_next"
+      STORAGE_DIR: "/app/storage"
+      JWT_SECRET: "it-next-f3a9c7d21b6e4850a1f9c3d7e8b2a5f6d4c1e9b7a3f5d2c8e6b4a1f9c7d3e5b2"
+      JWT_EXPIRES_IN: "8h"
+      MAX_FILE_SIZE_BYTES: 20971520
+      MAX_FILES_PER_UPLOAD: 10
+      CORS_ORIGIN: "http://localhost:5173"
+    ports:
+      - "4000:4000"
+    volumes:
+      - uploads_data:/app/storage
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        VITE_API_URL: "http://localhost:4000"
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "5173:80"
+
+volumes:
+  db_data:
+  uploads_data:

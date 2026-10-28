@@ -13,9 +13,7 @@ function required(name: string): string {
 export const env = {
   port: Number(process.env.PORT ?? 4000),
   databaseUrl: required("DATABASE_URL"),
-  supabaseUrl: required("SUPABASE_URL"),
-  supabaseServiceKey: required("SUPABASE_SERVICE_ROLE_KEY"),
-  supabaseBucket: process.env.SUPABASE_BUCKET ?? "uploads",
+  storageDir: process.env.STORAGE_DIR ?? "./storage",
   jwtSecret: process.env.JWT_SECRET ?? "dev-secret-change-me",
   jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? "8h",
   maxFileSizeBytes: Number(process.env.MAX_FILE_SIZE_BYTES ?? 20 * 1024 * 1024),

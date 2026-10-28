@@ -1,6 +1,7 @@
 import crypto from "crypto";
+import fs from "fs/promises";
+import path from "path";
 import { prisma } from "../../config/prisma";
-import { supabase } from "../../config/supabase";
 import { env } from "../../config/env";
 
 export function computeSha256(buffer: Buffer): string {
@@ -19,12 +20,13 @@ export async function findDuplicateByHash(hash: string) {
   return prisma.file.findUnique({ where: { sha256Hash: hash } });
 }
 
-export async function uploadToStorage(buffer: Buffer, storagePath: string, contentType: string) {
-  const { error } = await supabase.storage
-    .from(env.supabaseBucket)
-    .upload(storagePath, buffer, { contentType, upsert: false });
-  if (error) {
-    throw new Error(`Falha ao enviar para Supabase Storage: ${error.message}`);
+export async function uploadToStorage(buffer: Buffer, storagePath: string, _contentType: string) {
+  const fullPath = path.join(env.storageDir, storagePath);
+  await fs.mkdir(path.dirname(fullPath), { recursive: true });
+  try {
+    await fs.writeFile(fullPath, buffer);
+  } catch (err: any) {
+    throw new Error(`Falha ao gravar arquivo no storage local: ${err.message}`);
   }
 }
 
