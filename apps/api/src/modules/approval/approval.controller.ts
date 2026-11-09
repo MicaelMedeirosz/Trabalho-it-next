@@ -6,6 +6,7 @@ import { listPendingApprovals, decideApproval } from "./approval.service";
 export const approvalRouter = Router();
 
 approvalRouter.use(requireAuth);
+approvalRouter.use(requireRole("ADMIN"));
 
 approvalRouter.get(
   "/",
@@ -22,6 +23,9 @@ approvalRouter.post(
     const { decision, rejectionReason } = req.body;
     if (!["APPROVED", "REJECTED"].includes(decision)) {
       return res.status(400).json({ error: "decision deve ser APPROVED ou REJECTED" });
+    }
+    if (rejectionReason !== undefined && (typeof rejectionReason !== "string" || rejectionReason.length > 2000)) {
+      return res.status(400).json({ error: "A justificativa deve ser um texto de até 2000 caracteres." });
     }
     const result = await decideApproval({
       approvalId: req.params.id,

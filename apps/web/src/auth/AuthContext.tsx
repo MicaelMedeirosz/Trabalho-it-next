@@ -1,4 +1,4 @@
-import { createContext, useContext, useState } from "react";
+import { createContext, useContext, useState, useEffect } from "react";
 import type { ReactNode } from "react";
 import { api } from "../api/client";
 import type { User } from "../types";
@@ -17,6 +17,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const stored = localStorage.getItem("user");
     return stored ? JSON.parse(stored) : null;
   });
+
+  useEffect(() => {
+    const initialToken = localStorage.getItem("token");
+    if (!initialToken) return;
+    let active = true;
+    api.get<User>("/auth/me").then(({ data }) => {
+      if (!active || localStorage.getItem("token") !== initialToken) return;
+      localStorage.setItem("user", JSON.stringify(data));
+      setUser(data);
+    }).catch(() => {
+      // O interceptor trata sessões expiradas; falhas temporárias preservam a sessão.
+    });
+    return () => { active = false; };
+  }, []);
 
   async function login(email: string, password: string) {
     const { data } = await api.post("/auth/login", { email, password });

@@ -1,87 +1,123 @@
 import { useEffect, useState } from "react";
-import { NavLink, Outlet } from "react-router-dom";
+import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { api } from "../api/client";
-
+import { Brand, Icon } from "./Brand";
 const links = [
-  { to: "/", label: "Upload" },
-  { to: "/dashboard", label: "Dashboard" },
-  { to: "/approvals", label: "Homologação" },
-  { to: "/audit", label: "Auditoria" },
-  { to: "/reports", label: "Relatórios" },
+  { to: "/", label: "Importar arquivos", icon: "upload" },
+  { to: "/dashboard", label: "Visão geral", icon: "grid" },
+  { to: "/approvals", label: "Homologação", icon: "shield" },
+  { to: "/audit", label: "Auditoria", icon: "clock" },
+  { to: "/reports", label: "Relatórios", icon: "chart" },
 ];
-
-const APPROVALS_POLL_INTERVAL_MS = 30000;
-
 export function Layout() {
   const { user, logout } = useAuth();
+  const { pathname } = useLocation();
   const [pendingCount, setPendingCount] = useState(0);
-
   useEffect(() => {
     if (user?.role !== "ADMIN") return;
-
     let active = true;
-
-    async function fetchPendingCount() {
+    async function refresh() {
       try {
         const { data } = await api.get("/approvals");
         if (active) setPendingCount(data.length);
       } catch {
-        // falha silenciosa: badge não é crítico para o fluxo principal
+        /* O badge não bloqueia a navegação. */
       }
     }
-
-    fetchPendingCount();
-    const interval = setInterval(fetchPendingCount, APPROVALS_POLL_INTERVAL_MS);
-
+    refresh();
+    const interval = setInterval(refresh, 30000);
     return () => {
       active = false;
       clearInterval(interval);
     };
   }, [user?.role]);
-
   return (
-    <div className="min-h-screen bg-slate-50">
-      <header className="bg-slate-900 text-white">
-        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
-          <h1 className="text-lg font-semibold">ITNEXT — Catalogação de Estruturas de BD</h1>
-          <div className="flex items-center gap-4 text-sm">
-            <span>{user?.name} ({user?.role})</span>
-            <button
-              onClick={logout}
-              className="bg-slate-700 hover:bg-slate-600 px-3 py-1 rounded"
-            >
-              Sair
-            </button>
+    <div className="workspace">
+      <a href="#main-content" className="skip-link">
+        Ir para o conteúdo
+      </a>
+      <aside className="sidebar">
+        <Brand />
+        <div className="workspace-label">
+          <span className="workspace-mark">
+            <Icon name="database" />
+          </span>
+          <div>
+            <strong>Catálogo de dados</strong>
+            <small>Seu ambiente de trabalho</small>
           </div>
         </div>
-        <nav className="max-w-6xl mx-auto px-4 flex gap-1 border-t border-slate-800">
+        <p className="nav-caption">WORKSPACE</p>
+        <nav aria-label="Navegação principal">
           {links.map((link) => (
             <NavLink
               key={link.to}
               to={link.to}
               end={link.to === "/"}
               className={({ isActive }) =>
-                `relative px-4 py-2 text-sm flex items-center gap-1.5 ${
-                  isActive
-                    ? "bg-slate-50 text-slate-900 font-medium rounded-t"
-                    : "text-slate-300 hover:text-white"
-                }`
+                `nav-item ${isActive ? "active" : ""}`
               }
             >
-              {link.label}
+              <Icon name={link.icon} />
+              <span>{link.label}</span>
               {link.to === "/approvals" && pendingCount > 0 && (
-                <span className="bg-red-600 text-white text-[10px] font-semibold leading-none rounded-full min-w-[16px] h-4 px-1 flex items-center justify-center">
-                  {pendingCount}
-                </span>
+                <span className="notification-count">{pendingCount}</span>
               )}
             </NavLink>
           ))}
         </nav>
-      </header>
-      <main className="max-w-6xl mx-auto px-4 py-6">
-        <Outlet />
-      </main>
+        <div className="sidebar-bottom">
+          <div className="sidebar-note">
+            <Icon name="shield" />
+            <strong>Do arquivo à confiança.</strong>
+            <p>Estruturas organizadas, validadas e prontas para análise.</p>
+          </div>
+          <a href="https://itnext.com.br/" target="_blank" rel="noreferrer">
+            Conheça a ITNEXT <Icon name="arrow" />
+          </a>
+        </div>
+      </aside>
+      <div className="workspace-body">
+        <header className="topbar">
+          <div className="breadcrumb">
+            Workspace <span>/</span>
+            <strong>
+              {links.find((link) => link.to === pathname)?.label ?? "Catálogo"}
+            </strong>
+          </div>
+          <div className="user-menu">
+            <div className="avatar">
+              {user?.name?.slice(0, 2).toUpperCase()}
+            </div>
+            <div className="user-description">
+              <strong>{user?.name}</strong>
+              <small>
+                {user?.role === "ADMIN"
+                  ? "Administrador"
+                  : user?.role === "ANALYST"
+                    ? "Analista"
+                    : "Visualizador"}
+              </small>
+            </div>
+            <button
+              onClick={logout}
+              className="logout-button"
+              aria-label="Sair da conta"
+              title="Sair da conta"
+            >
+              <Icon name="exit" />
+            </button>
+          </div>
+        </header>
+        <main id="main-content" className="workspace-main">
+          <Outlet />
+        </main>
+        <footer className="workspace-footer">
+          <span>ITNEXT · Inteligência em cada estrutura.</span>
+          <span>Catálogo de estruturas de dados</span>
+        </footer>
+      </div>
     </div>
   );
 }

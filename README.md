@@ -26,9 +26,14 @@ Plataforma para gestão do ciclo de vida de arquivos contendo estruturas de banc
 
 MVP 100% local. Só precisa de [Docker](https://www.docker.com/products/docker-desktop/) e Docker Compose instalados — nada de conta em serviço externo.
 
+Gere uma chave JWT exclusiva na primeira execução (o arquivo `.env` não entra no Git):
+
 ```bash
+docker run --rm -v "${PWD}:/repo" -w /repo node:24-alpine node scripts/setup-local.cjs
 docker compose up --build
 ```
+
+Se já tiver Node instalado, use `npm run setup:local` no lugar do primeiro comando. O script preserva um segredo local já gerado; não compartilhe o `.env`. As portas 5173, 4000 e 5432 ficam restritas a `127.0.0.1`.
 
 Isso sobe 3 containers:
 - `db` — PostgreSQL 16, dados persistidos em volume (`db_data`)
@@ -41,7 +46,7 @@ Pra derrubar os containers: `docker compose down` (dados continuam no volume). P
 
 ### Rodar em outra máquina
 
-Clonar o repositório e rodar `docker compose up --build`. Não precisa instalar Node, Postgres nem nada além do Docker — tudo sobe dentro dos containers.
+Clonar o repositório, gerar o `.env` pelo comando de setup acima e rodar `docker compose up --build`. Não precisa instalar Node, Postgres nem nada além do Docker — tudo sobe dentro dos containers.
 
 ### Desenvolvimento sem rebuild a cada mudança
 
@@ -56,7 +61,7 @@ npm run dev:api    # porta 4000
 npm run dev:web    # porta 5173
 ```
 
-Nesse caso, usar `DATABASE_URL="postgresql://postgres:postgres@localhost:5432/trabalho_it_next"` no `.env` (fora do Docker, o host é `localhost`, não `db`).
+Nesse caso, copiar `apps/api/.env.example` para `apps/api/.env`, configurar um `JWT_SECRET` aleatório de pelo menos 32 bytes e usar `DATABASE_URL="postgresql://postgres:postgres@localhost:5432/trabalho_it_next"` no `.env` (fora do Docker, o host é `localhost`, não `db`).
 
 ## Pipeline de Processamento (ETP-001 a ETP-020)
 
@@ -82,3 +87,13 @@ npm run prisma:studio   # interface visual do banco
 npm run build:api       # build de produção backend
 npm run build:web       # build de produção frontend
 ```
+
+
+## Verificações de segurança
+
+```bash
+npm audit
+docker build --target security-test -f apps/api/Dockerfile -t trabalho-it-next-security-test .
+```
+
+Os testes usam um servidor HTTP isolado e persistência simulada; não alteram usuários nem arquivos do banco local. Veja `SECURITY_REVIEW.md` para escopo, correções e limitações antes de expor o sistema na internet.

@@ -1,6 +1,8 @@
 import { useCallback, useState } from "react";
 import { useDropzone } from "react-dropzone";
+import { Icon } from "../components/Brand";
 import { api } from "../api/client";
+import { statusColors } from "../statusColors";
 
 interface UploadItem {
   id: string;
@@ -48,7 +50,9 @@ export function UploadPage() {
   });
 
   function updateItem(id: string, patch: Partial<UploadItem>) {
-    setItems((prev) => prev.map((it) => (it.id === id ? { ...it, ...patch } : it)));
+    setItems((prev) =>
+      prev.map((it) => (it.id === id ? { ...it, ...patch } : it)),
+    );
   }
 
   async function uploadFile(item: UploadItem) {
@@ -60,7 +64,9 @@ export function UploadPage() {
         headers: { "Content-Type": "multipart/form-data" },
         signal: item.controller.signal,
         onUploadProgress: (evt) => {
-          const progress = evt.total ? Math.round((evt.loaded / evt.total) * 100) : 0;
+          const progress = evt.total
+            ? Math.round((evt.loaded / evt.total) * 100)
+            : 0;
           // Ao atingir 100% do envio, o arquivo já chegou ao servidor mas o
           // pipeline (validação/catalogação) ainda está rodando — sinaliza
           // "processando" em vez de deixar a barra parada em 100% sem feedback.
@@ -80,7 +86,10 @@ export function UploadPage() {
       });
     } catch (err: any) {
       if (err.code === "ERR_CANCELED") {
-        updateItem(item.id, { status: "ERROR", resultMessage: "Upload cancelado." });
+        updateItem(item.id, {
+          status: "ERROR",
+          resultMessage: "Upload cancelado.",
+        });
         return;
       }
       updateItem(item.id, {
@@ -101,33 +110,103 @@ export function UploadPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-xl font-semibold text-slate-900">Upload de Arquivos</h2>
-        <p className="text-sm text-slate-500">
-          Formatos suportados: .csv, .txt, .sql — arraste e solte ou selecione múltiplos arquivos.
-        </p>
+      <div className="page-heading">
+        <div>
+          <span className="section-kicker">COMECE PELOS SEUS DADOS</span>
+          <h2 className="mt-2 font-semibold">Importar arquivos</h2>
+          <p>O primeiro passo para um catálogo organizado e confiável.</p>
+        </div>
+        <span className="text-xs text-slate-500">CSV, TXT ou SQL</span>
       </div>
-
-      <div
-        {...getRootProps()}
-        className={`border-2 border-dashed rounded-lg p-10 text-center cursor-pointer transition ${
-          isDragActive ? "border-slate-900 bg-slate-100" : "border-slate-300 bg-white"
-        }`}
-      >
-        <input {...getInputProps()} />
-        <p className="text-slate-600">
-          {isDragActive ? "Solte os arquivos aqui..." : "Arraste arquivos aqui ou clique para selecionar"}
-        </p>
+      <div className="import-layout">
+        <section className="panel p-5 sm:p-7">
+          <div className="flex items-center gap-2 mb-5 text-sm font-semibold">
+            <Icon name="upload" /> Nova importação
+          </div>
+          <div
+            {...getRootProps({
+              role: "button",
+              "aria-label": "Selecionar arquivos para importar",
+            })}
+            className={`upload-zone ${isDragActive ? "drag-active" : ""}`}
+          >
+            <input {...getInputProps()} />
+            <div className="upload-symbol">
+              <Icon name="upload" />
+            </div>
+            <h3>
+              {isDragActive
+                ? "Solte seus arquivos aqui"
+                : "Dê um novo destino aos seus dados"}
+            </h3>
+            <p>
+              Arraste e solte seus arquivos aqui ou selecione no computador.
+            </p>
+            <span className="primary-button">
+              Selecionar arquivos <Icon name="arrow" />
+            </span>
+            <div className="format-tags">
+              <span>.CSV</span>
+              <span>.TXT</span>
+              <span>.SQL</span>
+            </div>
+          </div>
+          <p className="text-xs text-slate-500 mt-4">
+            O processamento começa automaticamente após a seleção.
+          </p>
+        </section>
+        <aside className="panel process-guide">
+          <h3>Como funciona</h3>
+          {[
+            {
+              title: "Importe suas estruturas",
+              text: "Envie dicionários de dados ou scripts de estrutura.",
+            },
+            {
+              title: "Valide e catalogue",
+              text: "O sistema identifica objetos e verifica as regras de qualidade.",
+            },
+            {
+              title: "Acompanhe os resultados",
+              text: "Consulte o catálogo e os alertas na visão geral.",
+            },
+          ].map((step, i) => (
+            <div key={step.title} className="process-step">
+              <span>0{i + 1}</span>
+              <div>
+                <strong>{step.title}</strong>
+                <p>{step.text}</p>
+              </div>
+            </div>
+          ))}
+        </aside>
       </div>
-
+      <div className="flex items-center justify-between">
+        <h3 className="text-base font-semibold">Importações desta sessão</h3>
+        <span className="text-xs text-slate-500">
+          {items.length} arquivo(s)
+        </span>
+      </div>
+      {items.length === 0 && (
+        <div className="panel empty-uploads">
+          <Icon name="file" />
+          <div>
+            <strong>Seu próximo catálogo começa aqui.</strong>Selecione um
+            arquivo para acompanhar o envio e o processamento.
+          </div>
+        </div>
+      )}
       {items.length > 0 && (
         <div className="bg-white rounded-lg border divide-y">
           {items.map((item) => (
             <div key={item.id} className="p-4 flex items-center gap-4">
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-slate-900 truncate">{item.file.name}</p>
+                <p className="text-sm font-medium text-slate-900 truncate">
+                  {item.file.name}
+                </p>
                 <p className="text-xs text-slate-500">
-                  {(item.file.size / 1024).toFixed(1)} KB · {STATUS_LABEL[item.status]}
+                  {(item.file.size / 1024).toFixed(1)} KB ·{" "}
+                  <span className={statusColors(item.status).text}>{STATUS_LABEL[item.status]}</span>
                 </p>
                 <div className="w-full bg-slate-200 rounded-full h-2 mt-2 overflow-hidden">
                   {item.status === "PROCESSING" ? (
@@ -135,7 +214,7 @@ export function UploadPage() {
                   ) : (
                     <div
                       className={`h-2 rounded-full transition-all ${
-                        item.status === "ERROR" ? "bg-red-500" : "bg-slate-900"
+                        item.status === "ERROR" ? "bg-red-500" : item.status === "DONE" ? "bg-green-500" : "bg-amber-500"
                       }`}
                       style={{ width: `${item.progress}%` }}
                     />
@@ -144,7 +223,9 @@ export function UploadPage() {
                 {item.resultMessage && (
                   <p
                     className={`text-xs mt-1 ${
-                      item.status === "ERROR" ? "text-red-600" : "text-green-600"
+                      item.status === "ERROR"
+                        ? "text-red-600"
+                        : "text-green-600"
                     }`}
                   >
                     {item.resultMessage}

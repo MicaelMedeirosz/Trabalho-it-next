@@ -17,6 +17,9 @@ RUN npm run build --workspace=@trabalho/shared-types
 RUN npx prisma generate --schema=prisma/schema.prisma
 RUN npm run build --workspace=@trabalho/api
 
+FROM build AS security-test
+RUN npm run test:security --workspace=@trabalho/api
+
 FROM node:24-alpine AS runtime
 WORKDIR /repo
 RUN apk add --no-cache openssl

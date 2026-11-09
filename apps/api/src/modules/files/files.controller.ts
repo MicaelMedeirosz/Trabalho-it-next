@@ -1,14 +1,23 @@
 import { Router } from "express";
 import multer from "multer";
-import { requireAuth, AuthenticatedRequest } from "../../middleware/auth.middleware";
+import { requireAuth, requireRole, AuthenticatedRequest } from "../../middleware/auth.middleware";
 import { asyncHandler } from "../../middleware/asyncHandler";
 import { env } from "../../config/env";
 import { processUpload, UploadError } from "../processing/pipeline.service";
 import { listFiles, getFileDetail } from "./files.service";
+import { HttpError } from "../../middleware/HttpError";
+import { resolveExtension } from "./files.service";
+import { rateLimit } from "express-rate-limit";
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: env.maxFileSizeBytes, files: env.maxFilesPerUpload },
+  limits: { fileSize: env.maxFileSizeBytes, files: env.maxFilesPerUpload, fields: 0, parts: env.maxFilesPerUpload + 1 },
+  fileFilter: (_req, file, callback) => {
+    if (!resolveExtension(file.originalname)) {
+      return callback(new HttpError(400, "Extensão não suportada. Use .csv, .txt ou .sql."));
+    }
+    callback(null, true);
+  },
 });
 
 export const filesRouter = Router();
@@ -17,6 +26,9 @@ filesRouter.use(requireAuth);
 
 filesRouter.post(
   "/upload",
+  requireRole("ADMIN", "ANALYST"),
+  rateLimit({ windowMs: 60 * 1000, limit: 30, standardHeaders: true, legacyHeaders: false,
+    message: { error: "Muitos uploads. Aguarde um minuto." } }),
   upload.array("files", env.maxFilesPerUpload),
   asyncHandler(async (req: AuthenticatedRequest, res) => {
     const files = req.files as Express.Multer.File[] | undefined;
@@ -37,7 +49,9 @@ filesRouter.post(
         });
         results.push(result);
       } catch (err: any) {
-        errors.push({ fileName: file.originalname, error: err.message, isUploadError: err instanceof UploadError });
+        const expected = err instanceof UploadError;
+        if (!expected) console.error("Falha no processamento do upload:", err);
+        errors.push({ fileName: file.originalname, error: expected ? err.message : "Falha interna ao processar o arquivo.", isUploadError: expected });
       }
     }
 
