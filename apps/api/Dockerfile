@@ -1,4 +1,4 @@
-FROM node:20-alpine AS base
+FROM node:24-alpine AS base
 WORKDIR /repo
 RUN apk add --no-cache openssl
 
@@ -17,7 +17,7 @@ RUN npm run build --workspace=@trabalho/shared-types
 RUN npx prisma generate --schema=prisma/schema.prisma
 RUN npm run build --workspace=@trabalho/api
 
-FROM node:20-alpine AS runtime
+FROM node:24-alpine AS runtime
 WORKDIR /repo
 RUN apk add --no-cache openssl
 ENV NODE_ENV=production
