@@ -15,6 +15,7 @@ model User {
   email        String   @unique
   passwordHash String   @map("password_hash")
   role         Role     @default(ANALYST)
+  avatarData   String?  @map("avatar_data")
   createdAt    DateTime @default(now()) @map("created_at")
 
   files            File[]

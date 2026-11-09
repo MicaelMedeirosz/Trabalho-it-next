@@ -91,6 +91,16 @@ npm run build:web       # build de produção frontend
 
 ## Verificações de segurança
 
+### Perfil
+
+Acesse **Meu perfil** no menu ou clique no seu nome no canto superior direito.
+A tela mostra nome, e-mail, data de cadastro e se a conta tem acesso de administrador.
+É possível selecionar, salvar, trocar ou remover uma foto JPG/PNG/WebP de até 2 MB.
+As permissões são apenas consultadas; não podem ser alteradas pelo próprio usuário.
+A coluna de foto é criada automaticamente pela migração ao iniciar a API com Docker.
+
+### Testes
+
 ```bash
 npm audit
 docker build --target security-test -f apps/api/Dockerfile -t trabalho-it-next-security-test .

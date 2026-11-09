@@ -2,8 +2,9 @@ import { Router } from "express";
 import { asyncHandler } from "../../middleware/asyncHandler";
 import { registerUser, loginUser } from "./auth.service";
 import { requireAuth, AuthenticatedRequest } from "../../middleware/auth.middleware";
-import { prisma } from "../../config/prisma";
 import { rateLimit } from "express-rate-limit";
+import multer from "multer";
+import { getProfile, saveAvatar, removeAvatar } from "./profile.service";
 
 export const authRouter = Router();
 const authLimiter = rateLimit({
@@ -16,12 +17,25 @@ const authLimiter = rateLimit({
 });
 
 authRouter.get("/me", requireAuth, asyncHandler(async (req: AuthenticatedRequest, res) => {
-  const user = await prisma.user.findUnique({
-    where: { id: req.user!.id },
-    select: { id: true, name: true, email: true, role: true },
-  });
-  res.json(user);
+  res.json(await getProfile(req.user!.id));
 }));
+
+const avatarLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 20,
+  standardHeaders: true, legacyHeaders: false,
+  message: { error: "Muitas alterações de foto. Aguarde 15 minutos." } });
+const avatarUpload = multer({ storage: multer.memoryStorage(),
+  limits: { fileSize: 2 * 1024 * 1024, files: 1, fields: 0, parts: 2 } });
+
+authRouter.put("/me/avatar", requireAuth, avatarLimiter, avatarUpload.single("photo"),
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
+    if (!req.file) return res.status(400).json({ error: "Selecione uma foto." });
+    res.json(await saveAvatar(req.user!.id, req.file.buffer));
+  }));
+
+authRouter.delete("/me/avatar", requireAuth, avatarLimiter,
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
+    res.json(await removeAvatar(req.user!.id));
+  }));
 
 authRouter.post(
   "/register",

@@ -3,12 +3,14 @@ import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { api } from "../api/client";
 import { Brand, Icon } from "./Brand";
+import { UserAvatar } from "./UserAvatar";
 const links = [
   { to: "/", label: "Importar arquivos", icon: "upload" },
   { to: "/dashboard", label: "Visão geral", icon: "grid" },
   { to: "/approvals", label: "Homologação", icon: "shield" },
   { to: "/audit", label: "Auditoria", icon: "clock" },
   { to: "/reports", label: "Relatórios", icon: "chart" },
+  { to: "/profile", label: "Meu perfil", icon: "user" },
 ];
 export function Layout() {
   const { user, logout } = useAuth();
@@ -87,9 +89,8 @@ export function Layout() {
             </strong>
           </div>
           <div className="user-menu">
-            <div className="avatar">
-              {user?.name?.slice(0, 2).toUpperCase()}
-            </div>
+            <NavLink to="/profile" className="profile-link" aria-label="Ver meu perfil" title="Ver meu perfil">
+            <UserAvatar user={user} />
             <div className="user-description">
               <strong>{user?.name}</strong>
               <small>
@@ -100,6 +101,7 @@ export function Layout() {
                     : "Visualizador"}
               </small>
             </div>
+            </NavLink>
             <button
               onClick={logout}
               className="logout-button"

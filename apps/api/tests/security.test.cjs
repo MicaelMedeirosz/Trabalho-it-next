@@ -14,7 +14,7 @@ const persistence = require("../dist/config/prisma");
 const realPrisma = persistence.prisma;
 const unexpectedQuery = async () => assert.fail("Unexpected database access");
 const prisma = {
-  user: { findUnique: unexpectedQuery, create: unexpectedQuery },
+  user: { findUnique: unexpectedQuery, create: unexpectedQuery, update: unexpectedQuery },
   approvalQueue: { findMany: unexpectedQuery },
   $transaction: unexpectedQuery,
 };
@@ -217,4 +217,57 @@ test("repeated authentication attempts are rate limited", async () => {
   }
   assert.equal(response.status,429);
   assert.ok(response.headers.get("retry-after"));
+});
+
+test("profile photo endpoints require authentication", async () => {
+  for (const method of ["PUT","DELETE"]) {
+    const response = await fetch(base+"/auth/me/avatar",{method});
+    assert.equal(response.status,401);
+  }
+});
+
+test("photo upload decodes and re-encodes only the current user's image", async () => {
+  currentUser("VIEWER");
+  const sharp = require("sharp");
+  const png = await sharp({create:{width:400,height:200,channels:3,background:"#3e4095"}}).png().toBuffer();
+  mock.method(prisma.user,"update",async ({where,data,select}) => {
+    assert.equal(where.id,"test-user");
+    assert.deepEqual(Object.keys(data),["avatarData"]);
+    assert.equal(select.passwordHash,undefined);
+    assert.match(data.avatarData,/^data:image\/jpeg;base64,/);
+    const image = Buffer.from(data.avatarData.split(",")[1],"base64");
+    const info = await sharp(image).metadata();
+    assert.equal(info.width,256); assert.equal(info.height,256); assert.equal(info.format,"jpeg");
+    assert.equal(info.exif,undefined);
+    return {id:"test-user",name:"Test",email:"test@example.com",role:"VIEWER",createdAt:new Date(),...data};
+  });
+  const body = new FormData(); body.append("photo",new Blob([png]),"photo.png");
+  const response=await fetch(base+"/auth/me/avatar",{method:"PUT",headers:{Authorization:`Bearer ${token()}`},body});
+  assert.equal(response.status,200);
+  const profile=await response.json();
+  assert.equal(profile.role,"VIEWER"); assert.equal(profile.avatarData,undefined);
+  assert.match(profile.avatarUrl,/^data:image\/jpeg;base64,/);
+});
+
+test("photo upload rejects SVG, false image content, extra fields and oversized files", async () => {
+  currentUser();
+  const update = mock.method(prisma.user,"update",async () => assert.fail("Must not save invalid photo"));
+  for (const [content,extra,status] of [["<svg xmlns='http://www.w3.org/2000/svg'></svg>",false,400],
+    ["not a picture",false,400],["invalid",true,400],["x".repeat(2*1024*1024+1),false,413]]) {
+    const body=new FormData(); body.append("photo",new Blob([content],{type:"image/png"}),"photo.png");
+    if (extra) body.append("role","ADMIN");
+    const response=await fetch(base+"/auth/me/avatar",{method:"PUT",headers:{Authorization:`Bearer ${token()}`},body});
+    assert.equal(response.status,status);
+  }
+  assert.equal(update.mock.callCount(),0);
+});
+
+test("removing a profile photo clears only the current user's avatar", async () => {
+  currentUser("ANALYST");
+  mock.method(prisma.user,"update",async ({where,data}) => {
+    assert.equal(where.id,"test-user"); assert.deepEqual(data,{avatarData:null});
+    return {id:"test-user",name:"Test",email:"test@example.com",role:"ANALYST",createdAt:new Date(),avatarData:null};
+  });
+  const response=await fetch(base+"/auth/me/avatar",{method:"DELETE",headers:{Authorization:`Bearer ${token()}`}});
+  assert.equal(response.status,200); assert.equal((await response.json()).avatarUrl,null);
 });

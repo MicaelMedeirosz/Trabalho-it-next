@@ -7,7 +7,7 @@ import { HttpError } from "../../middleware/HttpError";
 
 export interface LoginResult {
   token: string;
-  user: { id: string; name: string; email: string; role: string };
+  user: { id: string; name: string; email: string; role: string; avatarUrl: string | null; createdAt: Date };
 }
 
 export async function registerUser(name: string, email: string, password: string) {
@@ -41,6 +41,7 @@ export async function loginUser(email: string, password: string): Promise<LoginR
   } as jwt.SignOptions);
   return {
     token,
-    user: { id: user.id, name: user.name, email: user.email, role: user.role },
+    user: { id: user.id, name: user.name, email: user.email, role: user.role,
+      avatarUrl: user.avatarData ?? null, createdAt: user.createdAt },
   };
 }

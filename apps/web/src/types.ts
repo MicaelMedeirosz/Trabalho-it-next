@@ -3,6 +3,8 @@ export interface User {
   name: string;
   email: string;
   role: "ADMIN" | "ANALYST" | "VIEWER";
+  avatarUrl?: string | null;
+  createdAt?: string;
 }
 
 export interface FileListItem {

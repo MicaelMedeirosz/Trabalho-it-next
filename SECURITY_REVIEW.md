@@ -27,7 +27,7 @@ deve fazer parte do commit.
 
 ## Validação reproduzível
 
-Resultado nesta revisão: **19 testes passaram**, builds da API e interface
+Resultado atualizado com o perfil: **23 testes passaram**, builds da API e interface
 concluídos e **zero vulnerabilidades reportadas** em `npm audit` e
 `npm audit --omit=dev`. Verificação local confirmou health, perfil ADMIN,
 homologação autorizada, rejeição sem autenticação, interface com CSP e portas
@@ -49,6 +49,13 @@ hash de senha e ausência de escalada via cadastro, conflito de decisão, limite
 multipart/JSON, caminho de armazenamento, cabeçalhos e rate limit.
 Não altera o banco ou os arquivos do usuário. O teste de conflito usa persistência
 simulada; não é um teste de concorrência com PostgreSQL real.
+
+O perfil tem upload autenticado de foto (máximo 2 MB), limitado a JPG/PNG/WebP
+estático e 16 megapixels. A API decodifica e converte a imagem para JPEG de
+256 × 256 sem os metadados originais, armazenando somente a versão reduzida no
+registro do próprio usuário. SVG, conteúdo inválido e campos extras são rejeitados.
+Os testes cobrem envio, remoção, ausência de autenticação, limites e impossibilidade
+de alterar outro usuário ou seu papel pelo endpoint de foto.
 
 ## Limitações antes de disponibilizar na internet
 

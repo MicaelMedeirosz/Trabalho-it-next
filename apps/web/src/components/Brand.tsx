@@ -24,6 +24,7 @@ export function Icon({
   className?: string;
 }) {
   const paths: Record<string, string> = {
+    user: "M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0M4 21v-2a8 8 0 0 1 16 0v2",
     upload: "M12 16V4m-4 4 4-4 4 4M4 16v4h16v-4",
     grid: "M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z",
     shield: "M12 3 3 7v5c0 5 9 9 9 9s9-4 9-9V7zM8 12l3 3 5-6",
