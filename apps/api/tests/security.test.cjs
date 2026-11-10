@@ -15,7 +15,10 @@ const realPrisma = persistence.prisma;
 const unexpectedQuery = async () => assert.fail("Unexpected database access");
 const prisma = {
   user: { findUnique: unexpectedQuery, create: unexpectedQuery, update: unexpectedQuery },
-  approvalQueue: { findMany: unexpectedQuery },
+  passwordReset: { create: unexpectedQuery, findUnique: unexpectedQuery, deleteMany: unexpectedQuery },
+  auditLog: { findMany: unexpectedQuery },
+  file: { update: unexpectedQuery },
+  approvalQueue: { findMany: unexpectedQuery, create: unexpectedQuery },
   $transaction: unexpectedQuery,
 };
 persistence.prisma = prisma;
@@ -146,6 +149,7 @@ test("already claimed approval rejects a second decision before other writes", a
   mock.method(prisma, "$transaction", async callback => callback({
     approvalQueue: { findUnique: async () => ({id:"id",sessionId:"session",fileId:"file"}), updateMany: async () => ({count:0}) },
     processingStep: {updateMany:updateSteps},
+    validationResult: {findMany:async () => []},
   }));
   const response = await request("/approvals/id/decide", {decision:"APPROVED"}, token());
   assert.equal(response.status,409);
@@ -270,4 +274,141 @@ test("removing a profile photo clears only the current user's avatar", async () 
   });
   const response=await fetch(base+"/auth/me/avatar",{method:"DELETE",headers:{Authorization:`Bearer ${token()}`}});
   assert.equal(response.status,200); assert.equal((await response.json()).avatarUrl,null);
+});
+
+
+test("recovery hides unknown accounts and never exposes a token", async () => {
+  mock.method(prisma.user, "findUnique", async () => null);
+  const response = await request("/auth/forgot-password", {email:"missing@example.com"});
+  assert.equal(response.status, 200);
+  assert.deepEqual(Object.keys(await response.json()), ["message"]);
+});
+
+test("recovery validates email and reset password bounds before database access", async () => {
+  assert.equal((await request("/auth/forgot-password", {email:{}})).status,400);
+  for (const body of [{token:"bad",password:"long-password"},
+    {token:"a".repeat(64),password:"short"}, {token:"a".repeat(64),password:"é".repeat(37)}]) {
+    assert.equal((await request("/auth/reset-password",body)).status,400);
+  }
+});
+
+test("expired and unknown recovery links cannot change passwords", async () => {
+  for (const record of [null,{expiresAt:new Date(0),userId:"test-user"}]) {
+    mock.method(prisma.passwordReset,"findUnique",async () => record);
+    assert.equal((await request("/auth/reset-password",{token:"a".repeat(64),password:"new-long-password"})).status,400);
+  }
+});
+
+test("password reset invalidates old signed sessions", async () => {
+  mock.method(prisma.user,"findUnique",async () => ({id:"test-user",role:"ADMIN",sessionVersion:1}));
+  assert.equal((await request("/auth/me",undefined,token())).status,401);
+});
+
+
+test("approval with failed rules requires explicit confirmation before writes", async () => {
+  currentUser();
+  const claim = mock.fn(async () => assert.fail("Must not approve without confirmation"));
+  mock.method(prisma, "$transaction", async callback => callback({
+    approvalQueue: {findUnique:async () => ({id:"id",status:"PENDING",sessionId:"session",fileId:"file"}),updateMany:claim},
+    validationResult: {findMany:async () => [{ruleCode:"RV008"},{ruleCode:"RV009"}]},
+  }));
+  for (const confirmAlerts of [undefined,false]) {
+    const response=await request("/approvals/id/decide",{decision:"APPROVED",confirmAlerts},token());
+    assert.equal(response.status,409);
+    assert.match((await response.json()).error,/confirme/);
+  }
+  assert.equal(claim.mock.callCount(),0);
+});
+
+test("confirmed approval records the accepted alerts in the audit trail", async () => {
+  currentUser();
+  const audit = mock.fn(async ({data}) => {
+    assert.equal(data.event,"FILE_APPROVED");
+    assert.match(data.message,/confirmação explícita.*RV008, RV009/);
+    assert.match(data.message,/Justificativa: Ausências revisadas/);
+  });
+  mock.method(prisma,"$transaction",async callback => callback({
+    approvalQueue: {findUnique:async () => ({id:"id",status:"PENDING",sessionId:"session",fileId:"file"}),updateMany:async () => ({count:1})},
+    validationResult: {findMany:async () => [{ruleCode:"RV008"},{ruleCode:"RV009"}]},
+    processingStep: {updateMany:async () => ({count:1})}, file:{update:async () => ({})},auditLog:{create:audit},
+  }));
+  assert.equal((await request("/approvals/id/decide",{decision:"APPROVED",confirmAlerts:true,approvalReason:"  Ausências revisadas  "},token())).status,200);
+  assert.equal(audit.mock.callCount(),1);
+});
+
+test("approval confirmation rejects truthy strings", async () => {
+  currentUser();
+  assert.equal((await request("/approvals/id/decide",{decision:"APPROVED",confirmAlerts:"true"},token())).status,400);
+});
+
+
+test("approval with alerts rejects missing or blank justification before writes", async () => {
+  currentUser();
+  mock.method(prisma,"$transaction",async callback => callback({
+    approvalQueue:{findUnique:async () => ({id:"id",status:"PENDING",sessionId:"session",fileId:"file"}),updateMany:async () => assert.fail("Must not write")},
+    validationResult:{findMany:async () => [{ruleCode:"RV008"}]},
+  }));
+  for (const approvalReason of [undefined,"","   "]) {
+    const response=await request("/approvals/id/decide",{decision:"APPROVED",confirmAlerts:true,approvalReason},token());
+    assert.equal(response.status,400);
+    assert.match((await response.json()).error,/Justificativa obrigatória/);
+  }
+});
+
+test("approval justification validates type and length", async () => {
+  currentUser();
+  for (const approvalReason of [{},42,"x".repeat(2001)]) {
+    assert.equal((await request("/approvals/id/decide",{decision:"APPROVED",confirmAlerts:true,approvalReason},token())).status,400);
+  }
+});
+
+
+test("successful upload persists ETP-001 through ETP-016 and leaves human decisions untouched", async () => {
+  const files = require("../dist/modules/files/files.service");
+  const steps = require("../dist/modules/processing/steps.service");
+  const catalog = require("../dist/modules/catalog/catalog.service");
+  const validation = require("../dist/modules/validation/validation.engine");
+  const audit = require("../dist/modules/audit/audit.service");
+  const pipeline = require("../dist/modules/processing/pipeline.service");
+  mock.method(files,"findDuplicateByHash",async () => null);
+  mock.method(files,"uploadToStorage",async () => {});
+  mock.method(files,"createFileRecord",async () => ({id:"test-file"}));
+  mock.method(steps,"createSession",async () => ({id:"test-session",startedAt:new Date()}));
+  mock.method(steps,"finishSession",async () => {});
+  const flush = mock.method(steps,"flushSteps",async (id,records) => {
+    assert.equal(id,"test-session");
+    assert.deepEqual(records.map(r=>r.stepCode).sort(), Array.from({length:16},(_,i)=>`ETP-${String(i+1).padStart(3,"0")}`));
+    assert.ok(records.every(r=>r.status==="SUCCESS"));
+    assert.match(records.find(r=>r.stepCode==="ETP-002").message,/SQL/);
+  });
+  mock.method(catalog,"persistCatalog",async () => ({objectCount:1}));
+  mock.method(validation,"persistValidationResults",async () => {});
+  mock.method(audit,"logAudit",async () => {});
+  mock.method(prisma.approvalQueue,"create",async () => ({}));
+  mock.method(prisma.file,"update",async () => ({}));
+  const result=await pipeline.processUpload({originalName:"test.sql",buffer:Buffer.from("CREATE TABLE public.example (id INTEGER PRIMARY KEY);"),mimeType:"text/plain",uploadedById:"test-user"});
+  assert.equal(result.status,"PENDING_APPROVAL");
+  assert.equal(flush.mock.callCount(),1);
+});
+
+
+test("audit applies date bounds and file filter before limiting results", async () => {
+  currentUser();
+  const query=mock.method(prisma.auditLog,"findMany",async args => {
+    assert.equal(args.where.fileId,"file-id");
+    assert.equal(args.where.createdAt.gte.toISOString(),"2026-11-01T03:00:00.000Z");
+    assert.equal(args.where.createdAt.lt.toISOString(),"2026-12-01T03:00:00.000Z");
+    assert.equal(args.take,200);
+    return [];
+  });
+  const response=await request("/audit?fileId=file-id&from=2026-11-01T03:00:00.000Z&to=2026-12-01T03:00:00.000Z",undefined,token());
+  assert.equal(response.status,200);
+  assert.equal(query.mock.callCount(),1);
+});
+
+test("audit rejects invalid, incomplete and reversed date ranges", async () => {
+  currentUser();
+  for (const query of ["from=invalid&to=invalid", "from=2026-11-01T00:00:00.000Z", "from=2026-12-01T00:00:00.000Z&to=2026-11-01T00:00:00.000Z", "from=2026-02-30T00:00:00.000Z&to=2026-03-02T00:00:00.000Z"]) {
+    assert.equal((await request("/audit?"+query,undefined,token())).status,400);
+  }
 });

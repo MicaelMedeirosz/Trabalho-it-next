@@ -10,11 +10,15 @@ import { AuditPage } from "./pages/AuditPage";
 import { ReportsPage } from "./pages/ReportsPage";
 import { ProfilePage } from "./pages/ProfilePage";
 
+import { PasswordRecoveryPage } from "./pages/PasswordRecoveryPage";
+
 function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
         <Routes>
+          <Route path="/forgot-password" element={<PasswordRecoveryPage key="forgot" />} />
+          <Route path="/reset-password" element={<PasswordRecoveryPage key="reset" reset />} />
           <Route path="/login" element={<LoginPage />} />
           <Route element={<ProtectedRoute />}>
             <Route element={<Layout />}>

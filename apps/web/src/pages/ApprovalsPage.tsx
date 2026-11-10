@@ -31,9 +31,11 @@ function Spinner({ className = "" }: { className?: string }) {
 
 export function ApprovalsPage() {
   const { user } = useAuth();
-  const [alertsFileId, setAlertsFileId] = useState<string | null>(null);
+  const [detailsFileId, setDetailsFileId] = useState<string | null>(null);
   const [items, setItems] = useState<ApprovalItem[]>([]);
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [rejectingId, setRejectingId] = useState<string | null>(null);
+  const [approvalReason, setApprovalReason] = useState("");
   const [reason, setReason] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [deciding, setDeciding] = useState<DecidingState | null>(null);
@@ -47,9 +49,14 @@ export function ApprovalsPage() {
     load();
   }, []);
 
-  async function decide(id: string, decision: "APPROVED" | "REJECTED") {
+  async function decide(id: string, decision: "APPROVED" | "REJECTED", confirmAlerts = false) {
+    if (deciding) return;
     if (decision === "REJECTED" && !reason.trim()) {
       setError("Justificativa é obrigatória para rejeição.");
+      return;
+    }
+    if (decision === "APPROVED" && confirmAlerts && !approvalReason.trim()) {
+      setError("Justificativa obrigatória para aprovar um arquivo com alertas.");
       return;
     }
     setError(null);
@@ -57,12 +64,15 @@ export function ApprovalsPage() {
     try {
       await api.post(`/approvals/${id}/decide`, {
         decision,
+        ...(decision === "APPROVED" ? { confirmAlerts, ...(confirmAlerts ? { approvalReason: approvalReason.trim() } : {}) } : {}),
         ...(decision === "REJECTED" ? { rejectionReason: reason } : {}),
       });
       if (decision === "REJECTED") {
         setRejectingId(null);
         setReason("");
       }
+      setConfirmingId(null);
+      setApprovalReason("");
       await load();
     } catch (err: any) {
       setError(err.response?.data?.error ?? "Erro ao processar decisão");
@@ -81,12 +91,12 @@ export function ApprovalsPage() {
 
   return (
     <div className="space-y-4">
-      {alertsFileId && (
+      {detailsFileId && (
         <FileDetailModal
-          key={alertsFileId}
-          fileId={alertsFileId}
+          key={detailsFileId}
+          fileId={detailsFileId}
           initialTab="validation"
-          onClose={() => setAlertsFileId(null)}
+          onClose={() => setDetailsFileId(null)}
         />
       )}
       <h2 className="text-xl font-semibold text-slate-900">Fila de Homologação</h2>
@@ -98,6 +108,9 @@ export function ApprovalsPage() {
         <div className="space-y-3">
           {items.map((item) => {
             const failedRules = item.session.validationResults.filter((v) => !v.passed);
+            const allRulesPassed = failedRules.length === 0 && Array.from({ length: 16 }, (_, index) =>
+              `RV${String(index + 1).padStart(3, "0")}`
+            ).every(code => item.session.validationResults.some(rule => rule.ruleCode === code && rule.passed === true));
             const isDeciding = deciding?.id === item.id;
             const decidingApprove = isDeciding && deciding.decision === "APPROVED";
             const decidingReject = isDeciding && deciding.decision === "REJECTED";
@@ -119,16 +132,24 @@ export function ApprovalsPage() {
                   </div>
                   <div className="flex gap-2">
                     <button
-                      onClick={() => decide(item.id, "APPROVED")}
-                      disabled={isDeciding}
+                      onClick={() => {
+                        setError(null);
+                        setRejectingId(null);
+                        if (failedRules.length > 0) {
+                          if (confirmingId !== item.id) setApprovalReason("");
+                          setConfirmingId(item.id);
+                        }
+                        else void decide(item.id, "APPROVED");
+                      }}
+                      disabled={deciding !== null}
                       className="bg-green-600 text-white text-sm px-3 py-1.5 rounded hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                     >
                       {decidingApprove && <Spinner className="h-4 w-4" />}
                       {decidingApprove ? "Aprovando..." : "Aprovar"}
                     </button>
                     <button
-                      onClick={() => setRejectingId(rejectingId === item.id ? null : item.id)}
-                      disabled={isDeciding}
+                      onClick={() => { setConfirmingId(null); setRejectingId(rejectingId === item.id ? null : item.id); }}
+                      disabled={deciding !== null}
                       className="bg-red-600 text-white text-sm px-3 py-1.5 rounded hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       Rejeitar
@@ -136,20 +157,47 @@ export function ApprovalsPage() {
                   </div>
                 </div>
 
-                {failedRules.length > 0 && (
-                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-amber-700 bg-amber-50 rounded p-2">
-                    <span>
-                      {failedRules.length} regra(s) com alerta: {failedRules.map((r) => r.ruleCode).join(", ")}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setAlertsFileId(item.fileId)}
-                      aria-label={`Ver alertas de ${item.file.originalName}`}
-                      className="rounded border border-amber-300 bg-white px-3 py-1.5 font-semibold hover:bg-amber-100"
-                    >
-                      Ver alertas
-                    </button>
-                  </div>
+                <div className={`flex flex-wrap items-center justify-between gap-2 text-xs rounded p-2 ${
+                  failedRules.length > 0 ? "text-amber-700 bg-amber-50" : allRulesPassed ? "text-green-800 bg-green-50" : "text-slate-600 bg-slate-50"
+                }`}>
+                  <span>
+                    {failedRules.length > 0
+                      ? `${failedRules.length} regra(s) com alerta: ${failedRules.map(rule => rule.ruleCode).join(", ")}`
+                      : allRulesPassed
+                        ? "Arquivo passou em todas as 16 regras de validação."
+                        : "Validação incompleta. Consulte os detalhes do arquivo."}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setDetailsFileId(item.fileId)}
+                    aria-label={`Ver detalhes de ${item.file.originalName}: validação, etapas e catálogo`}
+                    className={`rounded border bg-white px-3 py-1.5 font-semibold ${failedRules.length > 0 ? "border-amber-300 hover:bg-amber-100" : allRulesPassed ? "border-green-300 hover:bg-green-100" : "border-slate-300 hover:bg-slate-100"}`}
+                  >
+                    Ver detalhes
+                  </button>
+                </div>
+
+                {confirmingId === item.id && (
+                  <section role="region" aria-labelledby={`confirm-title-${item.id}`} className="rounded-lg border border-red-300 bg-red-50 p-4 space-y-3">
+                    <h3 id={`confirm-title-${item.id}`} className="font-semibold text-red-900">Aprovar arquivo com alertas?</h3>
+                    <p className="text-sm text-red-800">
+                      {item.file.originalName} possui {failedRules.length} regra(s) com falha. A aprovação liberará os dados mesmo com esses alertas.
+                    </p>
+                    <ul className="list-disc pl-5 text-sm text-red-800">
+                      {failedRules.map(rule => <li key={rule.id}><strong>{rule.ruleCode}</strong>: {rule.details}</li>)}
+                    </ul>
+                    <div>
+                      <label htmlFor={`approval-reason-${item.id}`} className="block text-sm font-medium text-red-900">Justificativa da aprovação (obrigatória)</label>
+                      <textarea id={`approval-reason-${item.id}`} value={approvalReason} onChange={event => setApprovalReason(event.target.value)} required maxLength={2000} rows={3} disabled={deciding !== null} placeholder="Explique por que o arquivo pode ser aprovado apesar dos alertas." className="mt-1 w-full rounded border border-red-300 bg-white px-3 py-2 text-sm" />
+                      <p className="text-xs text-red-800">A justificativa será registrada na auditoria. Máximo de 2000 caracteres.</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button type="button" disabled={deciding !== null} onClick={() => setConfirmingId(null)} className="border rounded px-3 py-2 text-sm bg-white disabled:opacity-50">Cancelar</button>
+                      <button type="button" disabled={deciding !== null || !approvalReason.trim()} onClick={() => decide(item.id, "APPROVED", true)} className="bg-red-700 text-white rounded px-3 py-2 text-sm hover:bg-red-800 disabled:opacity-50">
+                        {decidingApprove ? "Aprovando..." : "Confirmar aprovação com alertas"}
+                      </button>
+                    </div>
+                  </section>
                 )}
 
                 {rejectingId === item.id && (
@@ -159,11 +207,11 @@ export function ApprovalsPage() {
                       placeholder="Justificativa da rejeição (obrigatória)"
                       value={reason}
                       onChange={(e) => setReason(e.target.value)}
-                      disabled={isDeciding}
+                      disabled={deciding !== null}
                     />
                     <button
                       onClick={() => decide(item.id, "REJECTED")}
-                      disabled={isDeciding}
+                      disabled={deciding !== null}
                       className="bg-slate-900 text-white text-sm px-3 py-1.5 rounded hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                     >
                       {decidingReject && <Spinner className="h-4 w-4" />}

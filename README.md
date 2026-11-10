@@ -35,7 +35,8 @@ docker compose up --build
 
 Se já tiver Node instalado, use `npm run setup:local` no lugar do primeiro comando. O script preserva um segredo local já gerado; não compartilhe o `.env`. As portas 5173, 4000 e 5432 ficam restritas a `127.0.0.1`.
 
-Isso sobe 3 containers:
+Isso sobe 4 containers:
+- `mailpit` — caixa de e-mails local de teste em `http://localhost:8025`
 - `db` — PostgreSQL 16, dados persistidos em volume (`db_data`)
 - `api` — backend Express, roda `prisma migrate deploy` automaticamente no start, arquivos de upload gravados em volume (`uploads_data`)
 - `web` — frontend React servido via nginx
@@ -53,7 +54,7 @@ Clonar o repositório, gerar o `.env` pelo comando de setup acima e rodar `docke
 Pra editar código com hot-reload, ao invés de usar o container `api`/`web`, pode subir só o banco via Docker e rodar o resto local:
 
 ```bash
-docker compose up db
+docker compose up -d db mailpit
 npm install
 npm run prisma:generate
 npm run prisma:deploy
@@ -107,3 +108,13 @@ docker build --target security-test -f apps/api/Dockerfile -t trabalho-it-next-s
 ```
 
 Os testes usam um servidor HTTP isolado e persistência simulada; não alteram usuários nem arquivos do banco local. Veja `SECURITY_REVIEW.md` para escopo, correções e limitações antes de expor o sistema na internet.
+
+## Recuperação de senha
+
+Na tela de login, use **Esqueci minha senha**. O link enviado por e-mail expira em 30 minutos, é de uso único e permite escolher uma nova senha. A alteração invalida sessões anteriores e os demais links da conta. A API não informa se o e-mail está cadastrado e limita as solicitações por IP.
+
+No desenvolvimento local, execute `docker compose up -d db mailpit`. Os e-mails ficam na caixa local em http://localhost:8025 (não são enviados para a internet). Com a API fora do Docker, use `SMTP_HOST=localhost` e `SMTP_PORT=1025`, conforme `apps/api/.env.example`.
+
+Para enviar e-mails reais, configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASSWORD` e `MAIL_FROM` no ambiente da API (ou no `.env` do Compose). Configure `WEB_URL` com a URL pública do frontend. Nunca exponha o Mailpit na internet. Em SMTP com STARTTLS use porta 587 e `SMTP_SECURE=false`; para TLS implícito use porta 465 e `SMTP_SECURE=true`.
+
+Ao atualizar uma instalação existente, execute `npm ci`, `npm run prisma:generate` e `npm run prisma:deploy` com o `DATABASE_URL` local configurado antes de reiniciar a API. No Docker, as migrações são aplicadas no início.

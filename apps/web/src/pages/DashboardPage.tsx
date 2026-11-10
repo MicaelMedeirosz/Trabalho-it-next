@@ -59,9 +59,6 @@ export function DashboardPage() {
           Visão geral dos arquivos
         </h2>
         <div className="flex items-center gap-3">
-          <span className="text-xs text-slate-400">
-            Atualização automática a cada 10s
-          </span>
           <button
             onClick={() => load()}
             className="text-xs bg-slate-900 text-white px-3 py-1 rounded hover:bg-slate-800"
@@ -71,12 +68,16 @@ export function DashboardPage() {
         </div>
       </div>
 
-      <div className="metric-grid">
+      <div className="metric-grid dashboard-metrics">
         {[
           { label: "Arquivos no catálogo", value: files.length },
           {
             label: "Aprovados",
             value: files.filter((f) => f.status === "APPROVED").length,
+          },
+          {
+            label: "Rejeitados",
+            value: files.filter((f) => f.status === "REJECTED").length,
           },
           {
             label: "Aguardando homologação",

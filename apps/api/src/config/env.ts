@@ -16,6 +16,13 @@ if (Buffer.byteLength(jwtSecret) < 32 || /^(dev-secret|troque-|replace-|it-next-
 }
 
 export const env = {
+  webUrl: process.env.WEB_URL ?? "http://localhost:5173",
+  smtpHost: process.env.SMTP_HOST ?? "localhost",
+  smtpPort: Number(process.env.SMTP_PORT ?? 1025),
+  smtpSecure: process.env.SMTP_SECURE === "true",
+  smtpUser: process.env.SMTP_USER,
+  smtpPassword: process.env.SMTP_PASSWORD,
+  mailFrom: process.env.MAIL_FROM ?? "ITNEXT <nao-responda@itnext.local>",
   port: Number(process.env.PORT ?? 4000),
   databaseUrl: required("DATABASE_URL"),
   storageDir: process.env.STORAGE_DIR ?? "./storage",

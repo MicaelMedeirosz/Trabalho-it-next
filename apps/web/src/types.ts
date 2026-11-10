@@ -53,6 +53,7 @@ export interface ApprovalItem {
 
 export interface AuditLogEntry {
   id: string;
+  fileId: string | null;
   event: string;
   status: string;
   message: string | null;

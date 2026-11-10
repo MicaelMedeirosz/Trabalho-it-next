@@ -38,8 +38,10 @@ export async function decideApproval(params: {
   decidedById: string;
   decision: "APPROVED" | "REJECTED";
   rejectionReason?: string;
+  confirmAlerts?: boolean;
+  approvalReason?: string;
 }) {
-  const { approvalId, decidedById, decision, rejectionReason } = params;
+  const { approvalId, decidedById, decision, rejectionReason, confirmAlerts, approvalReason } = params;
 
   if (decision === "REJECTED" && !rejectionReason?.trim()) {
     throw new HttpError(400, "Justificativa obrigatória para rejeição.");
@@ -52,6 +54,21 @@ export async function decideApproval(params: {
     });
 
     if (!approval) throw new HttpError(404, "Homologação não encontrada.");
+    if (approval.status !== undefined && approval.status !== "PENDING") throw new HttpError(409, "Este arquivo já foi homologado.");
+    const failedRules = decision === "APPROVED" ? await tx.validationResult.findMany({
+      where: { sessionId: approval.sessionId, passed: false },
+      select: { ruleCode: true },
+      orderBy: { ruleCode: "asc" },
+    }) : [];
+    if (failedRules.length > 0 && confirmAlerts !== true) {
+      throw new HttpError(409, "O arquivo possui regras com falha. Revise os alertas e confirme a aprovação com alertas.");
+    }
+    if (failedRules.length > 0 && !approvalReason?.trim()) {
+      throw new HttpError(400, "Justificativa obrigatória para aprovar um arquivo com alertas.");
+    }
+    const approvalMessage = failedRules.length > 0
+      ? `Arquivo aprovado com confirmação explícita dos alertas: ${failedRules.map(rule => rule.ruleCode).join(", ")}. Justificativa: ${approvalReason!.trim()}`
+      : "Arquivo aprovado e liberado.";
     const now = new Date();
     const claimed = await tx.approvalQueue.updateMany({
       where: { id: approvalId, status: "PENDING" },
@@ -67,7 +84,7 @@ export async function decideApproval(params: {
         status: "SUCCESS",
         startedAt: now,
         finishedAt: now,
-        message: `Decisão: ${decision}`,
+        message: decision === "APPROVED" ? approvalMessage : `Decisão: ${decision}`,
       },
     });
 
@@ -95,7 +112,7 @@ export async function decideApproval(params: {
     await tx.auditLog.create({ data: {
       event: decision === "APPROVED" ? "FILE_APPROVED" : "FILE_REJECTED",
       status: "SUCCESS",
-      message: decision === "REJECTED" ? rejectionReason : "Arquivo aprovado e liberado.",
+      message: decision === "REJECTED" ? rejectionReason : approvalMessage,
       userId: decidedById,
       fileId: approval.fileId,
     } });

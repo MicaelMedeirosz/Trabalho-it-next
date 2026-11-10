@@ -205,6 +205,13 @@ export function parseSql(content: string): ParseResult {
     relationships.push({ sourceTable: source, targetTable: target, type: "FOREIGN_KEY" });
   }
 
+  const tableCommentRegex = /COMMENT\s+ON\s+TABLE\s+([`"[\]\w.]+)\s+IS\s+'((?:''|[^'])*)'\s*;/gi;
+  while ((m = tableCommentRegex.exec(sql))) {
+    const { schema, name } = splitNameParts(m[1]);
+    const table = tables.find(t => t.name === name && t.schema === schema);
+    if (table) table.description = m[2].replace(/''/g, "'");
+  }
+
   return {
     dbmsGuess,
     schemas: Array.from(schemasSet),

@@ -22,9 +22,12 @@ export async function logAudit(params: LogAuditParams) {
   });
 }
 
-export async function listAuditLogs(filters: { fileId?: string }) {
+export async function listAuditLogs(filters: { fileId?: string; from?: Date; to?: Date }) {
   return prisma.auditLog.findMany({
-    where: filters.fileId ? { fileId: filters.fileId } : undefined,
+    where: {
+      ...(filters.fileId ? { fileId: filters.fileId } : {}),
+      ...(filters.from && filters.to ? { createdAt: { gte: filters.from, lt: filters.to } } : {}),
+    },
     orderBy: { createdAt: "desc" },
     take: 200,
     include: {
