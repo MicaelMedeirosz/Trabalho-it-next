@@ -903,3 +903,16 @@
     scroll-behavior: auto !important;
   }
 }
+
+.recovery-page { min-height: 100vh; display: grid; place-items: center; padding: 24px; background: #f3f5fa; }
+.recovery-card { width: 100%; max-width: 480px; padding: clamp(24px, 5vw, 44px); border: 1px solid #e2e6ef; border-radius: 20px; background: white; box-shadow: 0 16px 48px #17234b0d; }
+.recovery-card h1 { font-size: 28px; font-weight: 700; margin: 32px 0 12px; line-height: 1.2; }
+.recovery-links { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 20px; color: #3e4095; font-size: 14px; }
+.recovery-links a:hover { text-decoration: underline; }
+.recovery-success { padding: 16px; border-radius: 10px; background: #edf8f1; color: #21603d; }
+
+.recovery-card input { width: 100%; }
+
+@media (min-width: 1100px) {
+  .dashboard-metrics { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+}

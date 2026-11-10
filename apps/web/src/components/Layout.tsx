@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { api } from "../api/client";
 import { Brand, Icon } from "./Brand";
@@ -40,7 +40,9 @@ export function Layout() {
         Ir para o conteúdo
       </a>
       <aside className="sidebar">
-        <Brand />
+        <Link to="/" aria-label="ITNEXT Data Workspace — Importar arquivos" className="rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-purple-700">
+          <Brand />
+        </Link>
         <div className="workspace-label">
           <span className="workspace-mark">
             <Icon name="database" />

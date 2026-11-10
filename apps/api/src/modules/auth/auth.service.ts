@@ -36,7 +36,7 @@ export async function loginUser(email: string, password: string): Promise<LoginR
   if (!valid) {
     throw new HttpError(401, "E-mail ou senha incorretos.");
   }
-  const token = jwt.sign({ sub: user.id, role: user.role }, env.jwtSecret, {
+  const token = jwt.sign({ sub: user.id, role: user.role, sessionVersion: user.sessionVersion }, env.jwtSecret, {
     expiresIn: env.jwtExpiresIn,
   } as jwt.SignOptions);
   return {

@@ -15,6 +15,8 @@ model User {
   email        String   @unique
   passwordHash String   @map("password_hash")
   role         Role     @default(ANALYST)
+  sessionVersion Int @default(0) @map("session_version")
+  passwordResets PasswordReset[]
   avatarData   String?  @map("avatar_data")
   createdAt    DateTime @default(now()) @map("created_at")
 
@@ -310,4 +312,13 @@ model CatalogRelationship {
   relationshipType   String?            @map("relationship_type")
 
   @@map("catalog_relationships")
+}
+
+model PasswordReset {
+  tokenHash String @id @map("token_hash")
+  userId String @map("user_id")
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime @map("expires_at")
+  @@index([userId])
+  @@map("password_resets")
 }

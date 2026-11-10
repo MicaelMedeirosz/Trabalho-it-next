@@ -1,3 +1,4 @@
+import { requestPasswordReset, resetPassword, recoveryMessage } from "./password-recovery.service";
 import { Router } from "express";
 import { asyncHandler } from "../../middleware/asyncHandler";
 import { registerUser, loginUser } from "./auth.service";
@@ -65,3 +66,29 @@ authRouter.post(
     res.json(result);
   })
 );
+
+const recoveryLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 5,
+  standardHeaders: true, legacyHeaders: false,
+  message: { error: "Muitas solicitações. Aguarde 15 minutos antes de tentar novamente." } });
+const resetLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 15,
+  standardHeaders: true, legacyHeaders: false,
+  message: { error: "Muitas tentativas. Aguarde 15 minutos antes de tentar novamente." } });
+
+authRouter.post("/forgot-password", recoveryLimiter, asyncHandler(async (req, res) => {
+  const { email } = req.body ?? {};
+  if (typeof email !== "string" || email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+    return res.status(400).json({ error: "Informe um e-mail válido." });
+  }
+  await requestPasswordReset(email.trim());
+  res.json({ message: recoveryMessage });
+}));
+
+authRouter.post("/reset-password", resetLimiter, asyncHandler(async (req, res) => {
+  const { token, password } = req.body ?? {};
+  if (typeof token !== "string" || !/^[a-f0-9]{64}$/.test(token) ||
+      typeof password !== "string" || password.length < 12 || Buffer.byteLength(password, "utf8") > 72) {
+    return res.status(400).json({ error: "Informe um link válido e uma senha de pelo menos 12 caracteres (máximo de 72 bytes)." });
+  }
+  await resetPassword(token, password);
+  res.json({ message: "Senha redefinida. Entre com sua nova senha." });
+}));

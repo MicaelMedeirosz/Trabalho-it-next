@@ -41,7 +41,9 @@ function detectEncoding(buffer: Buffer): string {
 }
 
 export async function processUpload(input: ProcessUploadInput): Promise<ProcessUploadResult> {
+  const stepRecords = createStepRecorder();
   const extension = resolveExtension(input.originalName);
+  runStepSync(stepRecords, "ETP-001", `Arquivo recebido: ${input.originalName}`);
 
   // ETP-001: Recebimento do arquivo (log não bloqueante — não precisa esperar
   // a escrita terminar para seguir o pipeline). O catch é anexado
@@ -61,10 +63,14 @@ export async function processUpload(input: ProcessUploadInput): Promise<ProcessU
     throw new UploadError("Extensão não suportada. Use .csv, .txt ou .sql.");
   }
 
+  runStepSync(stepRecords, "ETP-002", `Extensão validada: ${extension}`);
+
   // ETP-003: Validação de tamanho
   if (input.buffer.length > env.maxFileSizeBytes) {
     throw new UploadError(`Arquivo excede o tamanho máximo permitido (${env.maxFileSizeBytes} bytes).`);
   }
+
+  runStepSync(stepRecords, "ETP-003", `Tamanho validado: ${input.buffer.length} bytes`);
 
   // ETP-004: Verificação de integridade/legibilidade
   const isReadable = input.buffer.length > 0;
@@ -72,11 +78,13 @@ export async function processUpload(input: ProcessUploadInput): Promise<ProcessU
     throw new UploadError("Arquivo vazio ou ilegível.");
   }
 
+  runStepSync(stepRecords, "ETP-004", "Arquivo não vazio; leitura do conteúdo disponível.");
+
   // ETP-005: Codificação
-  const encoding = detectEncoding(input.buffer);
+  const encoding = await runStep(stepRecords, "ETP-005", () => detectEncoding(input.buffer));
 
   // ETP-006: Hash SHA-256
-  const hash = computeSha256(input.buffer);
+  const hash = await runStep(stepRecords, "ETP-006", () => computeSha256(input.buffer));
   const duplicate = await findDuplicateByHash(hash);
 
   // Grava registro do arquivo (metadados iniciais - ETP-007 parcial)
@@ -101,8 +109,6 @@ export async function processUpload(input: ProcessUploadInput): Promise<ProcessU
 
   // ETP-008: Criação da sessão de processamento (em paralelo com o término do upload ao Storage)
   const [session] = await Promise.all([createSession(file.id), uploadPromise, uploadReceivedLog]);
-
-  const stepRecords = createStepRecorder();
 
   try {
     // ETP-007: Registro de metadados iniciais (já persistido acima, log formal aqui)

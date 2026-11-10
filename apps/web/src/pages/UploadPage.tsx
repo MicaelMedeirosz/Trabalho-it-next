@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useDropzone } from "react-dropzone";
 import { Icon } from "../components/Brand";
 import { api } from "../api/client";
@@ -14,7 +14,7 @@ interface UploadItem {
 }
 
 const STATUS_LABEL: Record<UploadItem["status"], string> = {
-  QUEUED: "Na fila",
+  QUEUED: "Aguardando confirmação",
   UPLOADING: "Enviando...",
   PROCESSING: "Processando no servidor (validação, catalogação)...",
   DONE: "Concluído",
@@ -30,6 +30,7 @@ const ACCEPTED = {
 
 export function UploadPage() {
   const [items, setItems] = useState<UploadItem[]>([]);
+  const startedUploads = useRef(new Set<string>());
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const newItems: UploadItem[] = acceptedFiles.map((file) => ({
@@ -40,7 +41,6 @@ export function UploadPage() {
       controller: new AbortController(),
     }));
     setItems((prev) => [...prev, ...newItems]);
-    newItems.forEach(uploadFile);
   }, []);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -56,6 +56,8 @@ export function UploadPage() {
   }
 
   async function uploadFile(item: UploadItem) {
+    if (item.status !== "QUEUED" || startedUploads.current.has(item.id)) return;
+    startedUploads.current.add(item.id);
     updateItem(item.id, { status: "UPLOADING" });
     const formData = new FormData();
     formData.append("files", item.file);
@@ -105,6 +107,7 @@ export function UploadPage() {
   }
 
   function removeItem(id: string) {
+    startedUploads.current.delete(id);
     setItems((prev) => prev.filter((i) => i.id !== id));
   }
 
@@ -151,16 +154,13 @@ export function UploadPage() {
               <span>.SQL</span>
             </div>
           </div>
-          <p className="text-xs text-slate-500 mt-4">
-            O processamento começa automaticamente após a seleção.
-          </p>
         </section>
         <aside className="panel process-guide">
           <h3>Como funciona</h3>
           {[
             {
               title: "Importe suas estruturas",
-              text: "Envie dicionários de dados ou scripts de estrutura.",
+              text: "Selecione os arquivos, confira os nomes e confirme o processamento.",
             },
             {
               title: "Valide e catalogue",
@@ -232,7 +232,21 @@ export function UploadPage() {
                   </p>
                 )}
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
+                {item.status === "QUEUED" && (
+                  <>
+                    <button type="button" onClick={() => uploadFile(item)}
+                      aria-label={`Confirmar e processar ${item.file.name}`}
+                      className="primary-button text-xs">
+                      Confirmar e processar
+                    </button>
+                    <button type="button" onClick={() => removeItem(item.id)}
+                      aria-label={`Remover ${item.file.name} da seleção`}
+                      className="text-xs text-slate-500 hover:underline">
+                      Remover
+                    </button>
+                  </>
+                )}
                 {item.status === "UPLOADING" && (
                   <button
                     onClick={() => cancelUpload(item.id)}
