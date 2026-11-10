@@ -3,6 +3,7 @@ import fs from "fs/promises";
 import path from "path";
 import { prisma } from "../../config/prisma";
 import { env } from "../../config/env";
+import { HttpError } from "../../middleware/HttpError";
 
 export function computeSha256(buffer: Buffer): string {
   return crypto.createHash("sha256").update(buffer).digest("hex");
@@ -21,7 +22,12 @@ export async function findDuplicateByHash(hash: string) {
 }
 
 export async function uploadToStorage(buffer: Buffer, storagePath: string, _contentType: string) {
-  const fullPath = path.join(env.storageDir, storagePath);
+  const root = path.resolve(env.storageDir);
+  const fullPath = path.resolve(root, storagePath);
+  const relative = path.relative(root, fullPath);
+  if (!relative || relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    throw new HttpError(400, "Caminho de armazenamento inválido.");
+  }
   await fs.mkdir(path.dirname(fullPath), { recursive: true });
   try {
     await fs.writeFile(fullPath, buffer);

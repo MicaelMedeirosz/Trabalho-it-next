@@ -8,6 +8,7 @@
     "packages/*"
   ],
   "scripts": {
+    "setup:local": "node scripts/setup-local.cjs",
     "dev:api": "npm run dev --workspace=apps/api",
     "dev:web": "npm run dev --workspace=apps/web",
     "build:api": "npm run build --workspace=apps/api",

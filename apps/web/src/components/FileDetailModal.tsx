@@ -1,22 +1,16 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
+import { statusColors, validationStatus } from "../statusColors";
 
 interface Props {
   fileId: string;
+  initialTab?: "steps" | "validation" | "catalog";
   onClose: () => void;
 }
 
-const STEP_STATUS_COLOR: Record<string, string> = {
-  PENDING: "bg-slate-100 text-slate-500",
-  RUNNING: "bg-blue-100 text-blue-700",
-  SUCCESS: "bg-green-100 text-green-700",
-  FAILED: "bg-red-100 text-red-700",
-  SKIPPED: "bg-slate-100 text-slate-400",
-};
-
-export function FileDetailModal({ fileId, onClose }: Props) {
+export function FileDetailModal({ fileId, initialTab = "steps", onClose }: Props) {
   const [data, setData] = useState<any>(null);
-  const [tab, setTab] = useState<"steps" | "validation" | "catalog">("steps");
+  const [tab, setTab] = useState<"steps" | "validation" | "catalog">(initialTab);
 
   useEffect(() => {
     api.get(`/files/${fileId}`).then((res) => setData(res.data));
@@ -58,12 +52,12 @@ export function FileDetailModal({ fileId, onClose }: Props) {
             <ul className="space-y-1 text-sm">
               {session?.steps?.map((s: any) => (
                 <li key={s.id} className="flex items-center gap-2 py-1 border-b last:border-0">
-                  <span className="font-mono text-xs text-slate-400 w-16">{s.stepCode}</span>
+                  <span className={`font-mono text-xs font-semibold w-16 shrink-0 ${statusColors(s.status).text}`}>{s.stepCode}</span>
                   <span className="flex-1">{s.stepName}</span>
                   {s.durationMs != null && (
                     <span className="text-xs text-slate-400">{s.durationMs}ms</span>
                   )}
-                  <span className={`px-2 py-0.5 rounded-full text-xs ${STEP_STATUS_COLOR[s.status]}`}>
+                  <span className={`px-2 py-0.5 rounded-full text-xs ${statusColors(s.status).badge}`}>
                     {s.status}
                   </span>
                 </li>
@@ -75,17 +69,17 @@ export function FileDetailModal({ fileId, onClose }: Props) {
             <ul className="space-y-1 text-sm">
               {session?.validationResults?.map((v: any) => (
                 <li key={v.id} className="flex items-start gap-2 py-1 border-b last:border-0">
-                  <span className="font-mono text-xs text-slate-400 w-16">{v.ruleCode}</span>
+                  <span className={`font-mono text-xs font-semibold w-16 shrink-0 ${statusColors(validationStatus(v.passed)).text}`}>{v.ruleCode}</span>
                   <div className="flex-1">
                     <p>{v.rule?.description}</p>
                     {v.details && <p className="text-xs text-slate-500">{v.details}</p>}
                   </div>
                   <span
                     className={`px-2 py-0.5 rounded-full text-xs ${
-                      v.passed ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
+                      statusColors(validationStatus(v.passed)).badge
                     }`}
                   >
-                    {v.passed ? "OK" : "Falha"}
+                    {v.passed === true ? "OK" : v.passed === false ? "Falha" : "Pendente"}
                   </span>
                 </li>
               ))}

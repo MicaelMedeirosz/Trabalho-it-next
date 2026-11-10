@@ -1,5 +1,5 @@
 import { prisma } from "../../config/prisma";
-import { logAudit } from "../audit/audit.service";
+import { HttpError } from "../../middleware/HttpError";
 
 export async function listPendingApprovals() {
   // select explícito: evita carregar sizeBytes (BigInt), que o res.json()
@@ -42,76 +42,75 @@ export async function decideApproval(params: {
   const { approvalId, decidedById, decision, rejectionReason } = params;
 
   if (decision === "REJECTED" && !rejectionReason?.trim()) {
-    throw new Error("Justificativa obrigatória para rejeição.");
+    throw new HttpError(400, "Justificativa obrigatória para rejeição.");
   }
 
-  const approval = await prisma.approvalQueue.findUniqueOrThrow({
-    where: { id: approvalId },
-    include: { session: true, file: true },
-  });
+  return prisma.$transaction(async (tx) => {
+    const approval = await tx.approvalQueue.findUnique({
+      where: { id: approvalId },
+      include: { session: true, file: true },
+    });
 
-  const now = new Date();
+    if (!approval) throw new HttpError(404, "Homologação não encontrada.");
+    const now = new Date();
+    const claimed = await tx.approvalQueue.updateMany({
+      where: { id: approvalId, status: "PENDING" },
+      data: { status: decision, decidedById, decidedAt: now,
+        rejectionReason: decision === "REJECTED" ? rejectionReason : null },
+    });
+    if (claimed.count !== 1) throw new HttpError(409, "Este arquivo já foi homologado.");
 
-  // ETP-017: Aprovação ou rejeição formal do arquivo
-  await prisma.processingStep.updateMany({
-    where: { sessionId: approval.sessionId, stepCode: "ETP-017" },
-    data: {
+    // ETP-017: Aprovação ou rejeição formal do arquivo
+    await tx.processingStep.updateMany({
+      where: { sessionId: approval.sessionId, stepCode: "ETP-017" },
+      data: {
+        status: "SUCCESS",
+        startedAt: now,
+        finishedAt: now,
+        message: `Decisão: ${decision}`,
+      },
+    });
+
+    // ETP-018: Exigência de justificativa em caso de rejeição
+    await tx.processingStep.updateMany({
+      where: { sessionId: approval.sessionId, stepCode: "ETP-018" },
+      data: {
+        status: decision === "REJECTED" ? "SUCCESS" : "SKIPPED",
+        startedAt: now,
+        finishedAt: now,
+        message: decision === "REJECTED" ? rejectionReason : "Não aplicável (arquivo aprovado).",
+      },
+    });
+
+    await tx.file.update({
+      where: { id: approval.fileId },
+      data: { status: decision },
+    });
+
+    // ETP-019: Registro de auditoria da decisão
+    await tx.processingStep.updateMany({
+      where: { sessionId: approval.sessionId, stepCode: "ETP-019" },
+      data: { status: "SUCCESS", startedAt: now, finishedAt: now, message: "Auditoria registrada." },
+    });
+    await tx.auditLog.create({ data: {
+      event: decision === "APPROVED" ? "FILE_APPROVED" : "FILE_REJECTED",
       status: "SUCCESS",
-      startedAt: now,
-      finishedAt: now,
-      message: `Decisão: ${decision}`,
-    },
-  });
+      message: decision === "REJECTED" ? rejectionReason : "Arquivo aprovado e liberado.",
+      userId: decidedById,
+      fileId: approval.fileId,
+    } });
 
-  // ETP-018: Exigência de justificativa em caso de rejeição
-  await prisma.processingStep.updateMany({
-    where: { sessionId: approval.sessionId, stepCode: "ETP-018" },
-    data: {
-      status: decision === "REJECTED" ? "SUCCESS" : "SKIPPED",
-      startedAt: now,
-      finishedAt: now,
-      message: decision === "REJECTED" ? rejectionReason : "Não aplicável (arquivo aprovado).",
-    },
-  });
+    // ETP-020: Liberação dos dados aprovados para consulta
+    await tx.processingStep.updateMany({
+      where: { sessionId: approval.sessionId, stepCode: "ETP-020" },
+      data: {
+        status: decision === "APPROVED" ? "SUCCESS" : "SKIPPED",
+        startedAt: now,
+        finishedAt: now,
+        message: decision === "APPROVED" ? "Dados liberados para consulta." : "Não aplicável (arquivo rejeitado).",
+      },
+    });
 
-  await prisma.approvalQueue.update({
-    where: { id: approvalId },
-    data: {
-      status: decision,
-      decidedById,
-      decidedAt: now,
-      rejectionReason: decision === "REJECTED" ? rejectionReason : undefined,
-    },
+    return tx.approvalQueue.findUnique({ where: { id: approvalId } });
   });
-
-  await prisma.file.update({
-    where: { id: approval.fileId },
-    data: { status: decision },
-  });
-
-  // ETP-019: Registro de auditoria da decisão
-  await prisma.processingStep.updateMany({
-    where: { sessionId: approval.sessionId, stepCode: "ETP-019" },
-    data: { status: "SUCCESS", startedAt: now, finishedAt: now, message: "Auditoria registrada." },
-  });
-  await logAudit({
-    event: decision === "APPROVED" ? "FILE_APPROVED" : "FILE_REJECTED",
-    status: "SUCCESS",
-    message: decision === "REJECTED" ? rejectionReason : "Arquivo aprovado e liberado.",
-    userId: decidedById,
-    fileId: approval.fileId,
-  });
-
-  // ETP-020: Liberação dos dados aprovados para consulta
-  await prisma.processingStep.updateMany({
-    where: { sessionId: approval.sessionId, stepCode: "ETP-020" },
-    data: {
-      status: decision === "APPROVED" ? "SUCCESS" : "SKIPPED",
-      startedAt: now,
-      finishedAt: now,
-      message: decision === "APPROVED" ? "Dados liberados para consulta." : "Não aplicável (arquivo rejeitado).",
-    },
-  });
-
-  return prisma.approvalQueue.findUnique({ where: { id: approvalId } });
 }

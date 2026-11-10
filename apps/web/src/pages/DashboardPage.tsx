@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { FileListItem } from "../types";
 import { FileDetailModal } from "../components/FileDetailModal";
+import { statusColors } from "../statusColors";
 
 const STATUS_LABEL: Record<string, string> = {
   RECEIVED: "Recebido",
@@ -10,15 +11,6 @@ const STATUS_LABEL: Record<string, string> = {
   APPROVED: "Aprovado",
   REJECTED: "Rejeitado",
   FAILED: "Falhou",
-};
-
-const STATUS_COLOR: Record<string, string> = {
-  RECEIVED: "bg-slate-100 text-slate-700",
-  PROCESSING: "bg-blue-100 text-blue-700",
-  PENDING_APPROVAL: "bg-amber-100 text-amber-700",
-  APPROVED: "bg-green-100 text-green-700",
-  REJECTED: "bg-red-100 text-red-700",
-  FAILED: "bg-red-100 text-red-700",
 };
 
 const ICONS: Record<string, string> = { CSV: "📊", TXT: "📄", SQL: "🗄️" };
@@ -61,11 +53,15 @@ export function DashboardPage() {
   }, []);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-xl font-semibold text-slate-900">Dashboard de Arquivos</h2>
+        <h2 className="text-xl font-semibold text-slate-900">
+          Visão geral dos arquivos
+        </h2>
         <div className="flex items-center gap-3">
-          <span className="text-xs text-slate-400">Atualização automática a cada 10s</span>
+          <span className="text-xs text-slate-400">
+            Atualização automática a cada 10s
+          </span>
           <button
             onClick={() => load()}
             className="text-xs bg-slate-900 text-white px-3 py-1 rounded hover:bg-slate-800"
@@ -75,10 +71,43 @@ export function DashboardPage() {
         </div>
       </div>
 
+      <div className="metric-grid">
+        {[
+          { label: "Arquivos no catálogo", value: files.length },
+          {
+            label: "Aprovados",
+            value: files.filter((f) => f.status === "APPROVED").length,
+          },
+          {
+            label: "Aguardando homologação",
+            value: files.filter((f) => f.status === "PENDING_APPROVAL").length,
+          },
+          {
+            label: "Objetos identificados",
+            value: files.reduce((sum, f) => sum + f.objectCount, 0),
+          },
+        ].map((metric) => (
+          <div className="metric-card" key={metric.label}>
+            <span>{metric.label}</span>
+            <strong>{loading ? "—" : metric.value}</strong>
+          </div>
+        ))}
+      </div>
       {loading ? (
         <p className="text-slate-500 text-sm">Carregando...</p>
       ) : files.length === 0 ? (
-        <p className="text-slate-500 text-sm">Nenhum arquivo enviado ainda.</p>
+        <div className="panel p-10 text-center">
+          <h3 className="text-lg font-semibold mb-2">
+            Seu catálogo está pronto para começar
+          </h3>
+          <p className="text-slate-500 text-sm mb-5">
+            Importe o primeiro arquivo para visualizar suas estruturas e
+            resultados.
+          </p>
+          <a href="/" className="primary-button">
+            Importar primeiro arquivo
+          </a>
+        </div>
       ) : (
         <div className="bg-white rounded-lg border overflow-x-auto">
           <table className="w-full text-sm">
@@ -106,7 +135,9 @@ export function DashboardPage() {
                     <span className="mr-2">{ICONS[f.extension]}</span>
                     {f.originalName}
                     {f.isDuplicate && (
-                      <span className="ml-2 text-xs text-amber-600">(duplicado)</span>
+                      <span className="ml-2 text-xs text-amber-600">
+                        (duplicado)
+                      </span>
                     )}
                   </td>
                   <td className="px-3 py-2 whitespace-nowrap">
@@ -115,13 +146,17 @@ export function DashboardPage() {
                   <td className="px-3 py-2">{f.uploadedBy}</td>
                   <td className="px-3 py-2">{formatBytes(f.sizeBytes)}</td>
                   <td className="px-3 py-2">
-                    <span className={`px-2 py-0.5 rounded-full text-xs ${STATUS_COLOR[f.status]}`}>
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-xs ${statusColors(f.status).badge}`}
+                    >
                       {STATUS_LABEL[f.status]}
                     </span>
                   </td>
                   <td className="px-3 py-2">{f.objectCount}</td>
                   <td className="px-3 py-2">
-                    {f.processingDurationMs ? `${f.processingDurationMs}ms` : "-"}
+                    {f.processingDurationMs
+                      ? `${f.processingDurationMs}ms`
+                      : "-"}
                   </td>
                   <td className="px-3 py-2">{f.identifiedDbms ?? "-"}</td>
                   <td className="px-3 py-2">
@@ -141,7 +176,10 @@ export function DashboardPage() {
       )}
 
       {selectedId && (
-        <FileDetailModal fileId={selectedId} onClose={() => setSelectedId(null)} />
+        <FileDetailModal
+          fileId={selectedId}
+          onClose={() => setSelectedId(null)}
+        />
       )}
     </div>
   );

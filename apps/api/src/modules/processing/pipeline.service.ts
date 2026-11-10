@@ -10,6 +10,7 @@ import { persistCatalog } from "../catalog/catalog.service";
 import { runValidationRules, persistValidationResults, RuleCheckResult } from "../validation/validation.engine";
 import { ParseResult } from "../catalog/types";
 import { logAudit } from "../audit/audit.service";
+import { randomUUID } from "node:crypto";
 
 export interface ProcessUploadInput {
   originalName: string;
@@ -79,7 +80,7 @@ export async function processUpload(input: ProcessUploadInput): Promise<ProcessU
   const duplicate = await findDuplicateByHash(hash);
 
   // Grava registro do arquivo (metadados iniciais - ETP-007 parcial)
-  const storagePath = `${Date.now()}-${input.originalName}`;
+  const storagePath = `${randomUUID()}.${extension.toLowerCase()}`;
 
   // Upload ao Storage e criação da sessão não dependem um do outro — rodam
   // em paralelo com a criação do registro do arquivo quando possível.

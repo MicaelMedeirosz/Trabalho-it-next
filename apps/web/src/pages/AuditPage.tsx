@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { AuditLogEntry } from "../types";
+import { statusColors } from "../statusColors";
 
 export function AuditPage() {
   const [logs, setLogs] = useState<AuditLogEntry[]>([]);
@@ -34,13 +35,11 @@ export function AuditPage() {
                 </td>
                 <td className="px-3 py-2">{log.user?.name ?? "-"}</td>
                 <td className="px-3 py-2">{log.file?.originalName ?? "-"}</td>
-                <td className="px-3 py-2 font-mono text-xs">{log.event}</td>
+                <td className={`px-3 py-2 font-mono text-xs font-semibold ${statusColors(log.status).text}`}>{log.event}</td>
                 <td className="px-3 py-2">
                   <span
                     className={`px-2 py-0.5 rounded-full text-xs ${
-                      log.status === "SUCCESS"
-                        ? "bg-green-100 text-green-700"
-                        : "bg-red-100 text-red-700"
+                      statusColors(log.status).badge
                     }`}
                   >
                     {log.status}

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { ApprovalItem } from "../types";
 import { useAuth } from "../auth/AuthContext";
+import { FileDetailModal } from "../components/FileDetailModal";
 
 interface DecidingState {
   id: string;
@@ -30,6 +31,7 @@ function Spinner({ className = "" }: { className?: string }) {
 
 export function ApprovalsPage() {
   const { user } = useAuth();
+  const [alertsFileId, setAlertsFileId] = useState<string | null>(null);
   const [items, setItems] = useState<ApprovalItem[]>([]);
   const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [reason, setReason] = useState("");
@@ -79,6 +81,14 @@ export function ApprovalsPage() {
 
   return (
     <div className="space-y-4">
+      {alertsFileId && (
+        <FileDetailModal
+          key={alertsFileId}
+          fileId={alertsFileId}
+          initialTab="validation"
+          onClose={() => setAlertsFileId(null)}
+        />
+      )}
       <h2 className="text-xl font-semibold text-slate-900">Fila de Homologação</h2>
       {error && <p className="text-sm text-red-600">{error}</p>}
 
@@ -127,8 +137,18 @@ export function ApprovalsPage() {
                 </div>
 
                 {failedRules.length > 0 && (
-                  <div className="text-xs text-amber-700 bg-amber-50 rounded p-2">
-                    {failedRules.length} regra(s) com alerta: {failedRules.map((r) => r.ruleCode).join(", ")}
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-amber-700 bg-amber-50 rounded p-2">
+                    <span>
+                      {failedRules.length} regra(s) com alerta: {failedRules.map((r) => r.ruleCode).join(", ")}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setAlertsFileId(item.fileId)}
+                      aria-label={`Ver alertas de ${item.file.originalName}`}
+                      className="rounded border border-amber-300 bg-white px-3 py-1.5 font-semibold hover:bg-amber-100"
+                    >
+                      Ver alertas
+                    </button>
                   </div>
                 )}
 

@@ -10,13 +10,18 @@ function required(name: string): string {
   return value;
 }
 
+const jwtSecret = required("JWT_SECRET");
+if (Buffer.byteLength(jwtSecret) < 32 || /^(dev-secret|troque-|replace-|it-next-)/i.test(jwtSecret)) {
+  throw new Error("JWT_SECRET deve ser um segredo aleatório com pelo menos 32 bytes. Execute npm run setup:local.");
+}
+
 export const env = {
   port: Number(process.env.PORT ?? 4000),
   databaseUrl: required("DATABASE_URL"),
   storageDir: process.env.STORAGE_DIR ?? "./storage",
-  jwtSecret: process.env.JWT_SECRET ?? "dev-secret-change-me",
+  jwtSecret,
   jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? "8h",
   maxFileSizeBytes: Number(process.env.MAX_FILE_SIZE_BYTES ?? 20 * 1024 * 1024),
   maxFilesPerUpload: Number(process.env.MAX_FILES_PER_UPLOAD ?? 10),
-  corsOrigin: process.env.CORS_ORIGIN ?? "*",
+  corsOrigin: process.env.CORS_ORIGIN ?? "http://localhost:5173",
 };

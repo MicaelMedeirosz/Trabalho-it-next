@@ -8,6 +8,7 @@ import { DashboardPage } from "./pages/DashboardPage";
 import { ApprovalsPage } from "./pages/ApprovalsPage";
 import { AuditPage } from "./pages/AuditPage";
 import { ReportsPage } from "./pages/ReportsPage";
+import { ProfilePage } from "./pages/ProfilePage";
 
 function App() {
   return (
@@ -22,6 +23,7 @@ function App() {
               <Route path="/approvals" element={<ApprovalsPage />} />
               <Route path="/audit" element={<AuditPage />} />
               <Route path="/reports" element={<ReportsPage />} />
+              <Route path="/profile" element={<ProfilePage />} />
             </Route>
           </Route>
         </Routes>
