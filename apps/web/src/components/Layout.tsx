@@ -43,15 +43,6 @@ export function Layout() {
         <Link to="/" aria-label="ITNEXT Data Workspace — Importar arquivos" className="rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-purple-700">
           <Brand />
         </Link>
-        <div className="workspace-label">
-          <span className="workspace-mark">
-            <Icon name="database" />
-          </span>
-          <div>
-            <strong>Catálogo de dados</strong>
-            <small>Seu ambiente de trabalho</small>
-          </div>
-        </div>
         <p className="nav-caption">WORKSPACE</p>
         <nav aria-label="Navegação principal">
           {links.map((link) => (
